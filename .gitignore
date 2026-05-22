@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Claude Code
+.claude/
+
+# OpenWolf
+.wolf/
+
+# Reference / local research
+ref/
+
+# Temporary outputs
+tmp/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+
+.tf_plugin_cache/
+
+# Floci runtime data (Docker volumes — không commit)
+floci/data-*/
+
+# Pytest / coverage
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
