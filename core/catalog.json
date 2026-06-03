@@ -1,0 +1,3990 @@
+{
+  "aws_acm_certificate": [
+    {
+      "id": "CKV2_AWS_71",
+      "name": "Ensure AWS ACM Certificate domain name does not include wildcards",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_233",
+      "name": "Ensure Create before destroy for ACM certificates",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_alb": [
+    {
+      "id": "CKV2_AWS_20",
+      "name": "Ensure that ALB redirects HTTP requests into HTTPS ones",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_alb_listener",
+        "aws_lb_listener"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_28",
+      "name": "Ensure public facing ALB are protected by WAF",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_wafregional_web_acl_association",
+        "aws_wafv2_web_acl_association"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_76",
+      "name": "Ensure AWS ALB attached WAFv2 WebACL is configured with AMR for Log4j Vulnerability",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_wafv2_web_acl_association"
+      ]
+    },
+    {
+      "id": "CKV_AWS_131",
+      "name": "Ensure that ALB drops HTTP headers",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_150",
+      "name": "Ensure that Load Balancer has deletion protection enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_152",
+      "name": "Ensure that Load Balancer (Network/Gateway) has cross-zone load balancing enabled",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_328",
+      "name": "Ensure that ALB is configured with defensive or strictest desync mitigation mode",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_alb_listener": [
+    {
+      "id": "CKV2_AWS_74",
+      "name": "Ensure AWS Load Balancers use strong ciphers",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_103",
+      "name": "Ensure that load balancer is using at least TLS 1.2",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_lb"
+      ]
+    },
+    {
+      "id": "CKV_AWS_2",
+      "name": "Ensure ALB protocol is HTTPS",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_alb_target_group": [
+    {
+      "id": "CKV_AWS_261",
+      "name": "Ensure HTTP HTTPS Target group defines Healthcheck",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_378",
+      "name": "Ensure AWS Load Balancer doesn't use HTTP protocol",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_alb_listener",
+        "aws_lb_listener"
+      ]
+    }
+  ],
+  "aws_ami": [
+    {
+      "id": "CKV_AWS_204",
+      "name": "Ensure AMIs are encrypted using KMS CMKs",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_ami_copy": [
+    {
+      "id": "CKV_AWS_235",
+      "name": "Ensure that copied AMIs are encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_236",
+      "name": "Ensure AMI copying uses a CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_ami_launch_permission": [
+    {
+      "id": "CKV_AWS_205",
+      "name": "Ensure to Limit AMI launch Permissions",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_api_gateway_domain_name": [
+    {
+      "id": "CKV_AWS_206",
+      "name": "Ensure API Gateway Domain uses a modern security Policy",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_api_gateway_method": [
+    {
+      "id": "CKV2_AWS_53",
+      "name": "Ensure AWS API gateway request is validated",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_59",
+      "name": "Ensure there is no open access to back-end resources through API",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_api_gateway_method_settings": [
+    {
+      "id": "CKV_AWS_308",
+      "name": "Ensure API Gateway method setting caching is set to encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_api_gateway_rest_api": [
+    {
+      "id": "CKV2_AWS_29",
+      "name": "Ensure public API gateway are protected by WAF",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_api_gateway_stage",
+        "aws_wafregional_web_acl_association",
+        "aws_wafv2_web_acl_association"
+      ]
+    },
+    {
+      "id": "CKV_AWS_237",
+      "name": "Ensure Create before destroy for API Gateway",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_api_gateway_stage": [
+    {
+      "id": "CKV2_AWS_51",
+      "name": "Ensure AWS API Gateway endpoints uses client certificate authentication",
+      "cat": [
+        "GENERAL_SECURITY"
+      ],
+      "connected_types": [
+        "aws_apigatewayv2_api"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_77",
+      "name": "Ensure AWS API Gateway Rest API attached WAFv2 WebACL is configured with AMR for Log4j Vulnerability",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_wafv2_web_acl_association"
+      ]
+    }
+  ],
+  "aws_apigatewayv2_api": [
+    {
+      "id": "CKV2_AWS_77",
+      "name": "Ensure AWS API Gateway Rest API attached WAFv2 WebACL is configured with AMR for Log4j Vulnerability",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_wafv2_web_acl_association"
+      ]
+    }
+  ],
+  "aws_apigatewayv2_route": [
+    {
+      "id": "CKV_AWS_309",
+      "name": "Ensure API GatewayV2 routes specify an authorization type",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_apigatewayv2_stage": [
+    {
+      "id": "CKV2_AWS_51",
+      "name": "Ensure AWS API Gateway endpoints uses client certificate authentication",
+      "cat": [
+        "GENERAL_SECURITY"
+      ],
+      "connected_types": [
+        "aws_apigatewayv2_api"
+      ]
+    }
+  ],
+  "aws_appflow_connector_profile": [
+    {
+      "id": "CKV_AWS_264",
+      "name": "Ensure AppFlow connector profile uses CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_appflow_flow": [
+    {
+      "id": "CKV_AWS_263",
+      "name": "Ensure AppFlow flow uses CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_appsync_api_cache": [
+    {
+      "id": "CKV_AWS_214",
+      "name": "Ensure AppSync API Cache is encrypted at rest",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_215",
+      "name": "Ensure AppSync API Cache is encrypted in transit",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_appsync_graphql_api": [
+    {
+      "id": "CKV2_AWS_33",
+      "name": "Ensure AppSync is protected by WAF",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ],
+      "connected_types": [
+        "aws_wafv2_web_acl_association"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_78",
+      "name": "Ensure AWS AppSync attached WAFv2 WebACL is configured with AMR for Log4j Vulnerability",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_wafv2_web_acl_association"
+      ]
+    }
+  ],
+  "aws_athena_database": [
+    {
+      "id": "CKV_AWS_77",
+      "name": "Ensure Athena Database is encrypted at rest (default is unencrypted)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_athena_workgroup": [
+    {
+      "id": "CKV_AWS_159",
+      "name": "Ensure that Athena Workgroup is encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_82",
+      "name": "Ensure Athena Workgroup should enforce configuration to prevent client disabling encryption",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_autoscaling_group": [
+    {
+      "id": "CKV2_AWS_15",
+      "name": "Ensure that auto Scaling groups that are associated with a load balancer are using Elastic Load Balancing health checks.",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_autoscaling_attachment"
+      ]
+    },
+    {
+      "id": "CKV_AWS_153",
+      "name": "Autoscaling groups should supply tags to launch configurations",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_315",
+      "name": "Ensure EC2 Auto Scaling groups use EC2 launch templates",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_backup_vault": [
+    {
+      "id": "CKV_AWS_166",
+      "name": "Ensure Backup Vault is encrypted at rest using KMS CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_batch_job_definition": [
+    {
+      "id": "CKV_AWS_210",
+      "name": "Batch job does not define a privileged container",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_bedrockagent_agent": [
+    {
+      "id": "CKV_AWS_373",
+      "name": "Ensure Bedrock Agent is encrypted with a CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_cloudfront_distribution": [
+    {
+      "id": "CKV2_AWS_32",
+      "name": "Ensure CloudFront distribution has a response headers policy attached",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_cloudfront_response_headers_policy",
+        "data.aws_cloudfront_response_headers_policy"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_42",
+      "name": "Ensure AWS CloudFront distribution uses custom SSL certificate",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_46",
+      "name": "Ensure AWS CloudFront Distribution with S3 have Origin Access set to enabled",
+      "cat": [
+        "IAM"
+      ],
+      "connected_types": [
+        "aws_s3_bucket"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_47",
+      "name": "Ensure AWS CloudFront attached WAFv2 WebACL is configured with AMR for Log4j Vulnerability",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ],
+      "connected_types": [
+        "aws_wafv2_web_acl"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_54",
+      "name": "Ensure AWS CloudFront distribution is using secure SSL protocols for HTTPS communication",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_72",
+      "name": "Ensure AWS CloudFront origin protocol policy enforces HTTPS-only",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_174",
+      "name": "Verify CloudFront Distribution Viewer Certificate is using TLS v1.2 or higher",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_216",
+      "name": "Ensure CloudFront distribution is enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_305",
+      "name": "Ensure CloudFront distribution has a default root object configured",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_310",
+      "name": "Ensure CloudFront distributions should have origin failover configured",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_34",
+      "name": "Ensure CloudFront distribution ViewerProtocolPolicy is set to HTTPS",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_374",
+      "name": "Ensure AWS CloudFront web distribution has geo restriction enabled",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_68",
+      "name": "CloudFront Distribution should have WAF enabled",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ]
+    }
+  ],
+  "aws_cloudfront_response_headers_policy": [
+    {
+      "id": "CKV_AWS_259",
+      "name": "Ensure CloudFront response header policy enforces Strict Transport Security",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_cloudsearch_domain": [
+    {
+      "id": "CKV_AWS_218",
+      "name": "Ensure that CloudSearch is using latest TLS",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_220",
+      "name": "Ensure that CloudSearch is using https",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_cloudtrail_event_data_store": [
+    {
+      "id": "CKV_AWS_294",
+      "name": "Ensure CloudTrail Event Data Store uses CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_cloudwatch_log_group": [
+    {
+      "id": "CKV_AWS_158",
+      "name": "Ensure that CloudWatch Log Group is encrypted by KMS",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_cloudwatch_metric_alarm": [
+    {
+      "id": "CKV_AWS_319",
+      "name": "Ensure that CloudWatch alarm actions are enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_codeartifact_domain": [
+    {
+      "id": "CKV_AWS_221",
+      "name": "Ensure CodeArtifact Domain is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_codebuild_project": [
+    {
+      "id": "CKV_AWS_147",
+      "name": "Ensure that CodeBuild projects are encrypted using CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_311",
+      "name": "Ensure that CodeBuild S3 logs are encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_316",
+      "name": "Ensure CodeBuild project environments do not have privileged mode enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_78",
+      "name": "Ensure that CodeBuild Project encryption is not disabled",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_codecommit_approval_rule_template": [
+    {
+      "id": "CKV_AWS_257",
+      "name": "Ensure CodeCommit branch changes have at least 2 approvals",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_codecommit_repository": [
+    {
+      "id": "CKV2_AWS_37",
+      "name": "Ensure CodeCommit associates an approval rule",
+      "cat": [
+        "GENERAL_SECURITY"
+      ],
+      "connected_types": [
+        "aws_codecommit_approval_rule_template_association"
+      ]
+    }
+  ],
+  "aws_codegurureviewer_repository_association": [
+    {
+      "id": "CKV_AWS_381",
+      "name": "Make sure that aws_codegurureviewer_repository_association has a CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_codepipeline": [
+    {
+      "id": "CKV_AWS_219",
+      "name": "Ensure CodePipeline Artifact store is using a KMS CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_cognito_identity_pool": [
+    {
+      "id": "CKV_AWS_366",
+      "name": "Ensure AWS Cognito identity pool does not allow unauthenticated guest access",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_comprehend_entity_recognizer": [
+    {
+      "id": "CKV_AWS_267",
+      "name": "Ensure that Comprehend Entity Recognizer's model is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_268",
+      "name": "Ensure that Comprehend Entity Recognizer's volume is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_connect_instance_storage_config": [
+    {
+      "id": "CKV_AWS_269",
+      "name": "Ensure Connect Instance Kinesis Video Stream Storage Config uses CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_270",
+      "name": "Ensure Connect Instance S3 Storage Config uses CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_datasync_location_object_storage": [
+    {
+      "id": "CKV_AWS_295",
+      "name": "Ensure DataSync Location Object Storage doesn't expose secrets",
+      "cat": [
+        "SECRETS"
+      ]
+    }
+  ],
+  "aws_dax_cluster": [
+    {
+      "id": "CKV_AWS_239",
+      "name": "Ensure DAX cluster endpoint is using TLS",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_47",
+      "name": "Ensure DAX is encrypted at rest (default is unencrypted)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_db_cluster_snapshot": [
+    {
+      "id": "CKV_AWS_146",
+      "name": "Ensure that RDS database cluster snapshot is encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_db_instance": [
+    {
+      "id": "CKV2_AWS_60",
+      "name": "Ensure RDS instance with copy tags to snapshots is enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_69",
+      "name": "Ensure AWS RDS database instance configured with encryption in transit",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_db_parameter_group"
+      ]
+    },
+    {
+      "id": "CKV_AWS_16",
+      "name": "Ensure all data stored in the RDS is securely encrypted at rest",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_161",
+      "name": "Ensure RDS database has IAM authentication enabled",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_17",
+      "name": "Ensure all data stored in RDS is not publicly accessible",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_211",
+      "name": "Ensure RDS uses a modern CaCert",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_226",
+      "name": "Ensure DB instance gets all minor upgrades automatically",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_250",
+      "name": "Ensure that RDS PostgreSQL instances use a non vulnerable version with the log_fdw extension (https://aws.amazon.com/security/security-bulletins/AWS-2022-004/)",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_293",
+      "name": "Ensure that AWS database instances have deletion protection enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_354",
+      "name": "Ensure RDS Performance Insights are encrypted using KMS CMKs",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_388",
+      "name": "Ensure AWS Aurora PostgreSQL is not exposed to local file read vulnerability",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_db_instance_automated_backups_replication": [
+    {
+      "id": "CKV_AWS_245",
+      "name": "Ensure replicated backups are encrypted at rest using KMS CMKs",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_db_security_group": [
+    {
+      "id": "CKV_AWS_198",
+      "name": "Ensure no aws_db_security_group resources exist",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_23",
+      "name": "Ensure every security group and rule has a description",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_db_snapshot": [
+    {
+      "id": "CKV_AWS_302",
+      "name": "Ensure DB Snapshots are not Public",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_db_snapshot_copy": [
+    {
+      "id": "CKV_AWS_266",
+      "name": "Ensure DB Snapshot copy uses CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_default_vpc": [
+    {
+      "id": "CKV_AWS_148",
+      "name": "Ensure no default VPC is planned to be provisioned",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_dms_endpoint": [
+    {
+      "id": "CKV2_AWS_49",
+      "name": "Ensure AWS Database Migration Service endpoints have SSL configured",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_296",
+      "name": "Ensure DMS endpoint uses Customer Managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_dms_replication_instance": [
+    {
+      "id": "CKV_AWS_212",
+      "name": "Ensure DMS replication instance is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_222",
+      "name": "Ensure DMS replication instance gets all minor upgrade automatically",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_89",
+      "name": "DMS replication instance should not be publicly accessible",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_dms_s3_endpoint": [
+    {
+      "id": "CKV_AWS_298",
+      "name": "Ensure DMS S3 uses Customer Managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_docdb_cluster": [
+    {
+      "id": "CKV_AWS_182",
+      "name": "Ensure DocumentDB is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_74",
+      "name": "Ensure DocumentDB is encrypted at rest (default is unencrypted)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_docdb_cluster_parameter_group": [
+    {
+      "id": "CKV_AWS_90",
+      "name": "Ensure DocumentDB TLS is not disabled",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_docdb_global_cluster": [
+    {
+      "id": "CKV_AWS_292",
+      "name": "Ensure DocumentDB Global Cluster is encrypted at rest (default is unencrypted)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_dynamodb_table": [
+    {
+      "id": "CKV2_AWS_16",
+      "name": "Ensure that Auto Scaling is enabled on your DynamoDB tables",
+      "cat": [
+        "GENERAL_SECURITY"
+      ],
+      "connected_types": [
+        "aws_appautoscaling_policy",
+        "aws_appautoscaling_target"
+      ]
+    },
+    {
+      "id": "CKV_AWS_119",
+      "name": "Ensure DynamoDB Tables are encrypted using a KMS Customer Managed CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_dynamodb_table_replica": [
+    {
+      "id": "CKV_AWS_271",
+      "name": "Ensure DynamoDB table replica KMS encryption uses CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_ebs_encryption_by_default": [
+    {
+      "id": "CKV_AWS_106",
+      "name": "Ensure EBS default encryption is enabled",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_ebs_snapshot_copy": [
+    {
+      "id": "CKV_AWS_183",
+      "name": "Ensure EBS Snapshot Copy is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_ebs_volume": [
+    {
+      "id": "CKV_AWS_189",
+      "name": "Ensure EBS Volume is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_3",
+      "name": "Ensure all data stored in the EBS is securely encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_ec2_transit_gateway": [
+    {
+      "id": "CKV_AWS_331",
+      "name": "Ensure Transit Gateways do not automatically accept VPC attachment requests",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_ecr_repository": [
+    {
+      "id": "CKV_AWS_136",
+      "name": "Ensure that ECR repositories are encrypted using KMS",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_163",
+      "name": "Ensure ECR image scanning on push is enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_51",
+      "name": "Ensure ECR Image Tags are immutable",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_ecr_repository_policy": [
+    {
+      "id": "CKV_AWS_32",
+      "name": "Ensure ECR policy is not set to public",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_ecs_cluster": [
+    {
+      "id": "CKV_AWS_224",
+      "name": "Ensure ECS Cluster logging is enabled and client to container communication uses CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_ecs_service": [
+    {
+      "id": "CKV_AWS_332",
+      "name": "Ensure ECS Fargate services run on the latest Fargate platform version",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_ecs_task_definition": [
+    {
+      "id": "CKV_AWS_249",
+      "name": "Ensure that the Execution Role ARN and the Task Role ARN are different in ECS Task definitions",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_334",
+      "name": "Ensure ECS containers should run as non-privileged",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_335",
+      "name": "Ensure ECS task definitions should not share the host's process namespace",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_336",
+      "name": "Ensure ECS containers are limited to read-only access to root filesystems",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_97",
+      "name": "Ensure Encryption in transit is enabled for EFS volumes in ECS Task definitions",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_efs_access_point": [
+    {
+      "id": "CKV_AWS_329",
+      "name": "EFS access points should enforce a root directory",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_330",
+      "name": "EFS access points should enforce a user identity",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_efs_file_system": [
+    {
+      "id": "CKV_AWS_184",
+      "name": "Ensure resource is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_42",
+      "name": "Ensure EFS is securely encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_eip_association": [
+    {
+      "id": "CKV2_AWS_19",
+      "name": "Ensure that all EIP addresses allocated to a VPC are attached to EC2 instances",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_eip",
+        "aws_instance",
+        "aws_nat_gateway",
+        "aws_transfer_server"
+      ]
+    }
+  ],
+  "aws_elastic_beanstalk_environment": [
+    {
+      "id": "CKV_AWS_312",
+      "name": "Ensure Elastic Beanstalk environments have enhanced health reporting enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_340",
+      "name": "Ensure Elastic Beanstalk managed platform updates are enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_elasticache_cluster": [
+    {
+      "id": "CKV_AWS_322",
+      "name": "Ensure ElastiCache for Redis cache clusters have auto minor version upgrades enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_323",
+      "name": "Ensure ElastiCache clusters do not use the default subnet group",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_elasticache_replication_group": [
+    {
+      "id": "CKV_AWS_191",
+      "name": "Ensure ElastiCache replication group is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_29",
+      "name": "Ensure all data stored in the ElastiCache Replication Group is securely encrypted at rest",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_30",
+      "name": "Ensure all data stored in the ElastiCache Replication Group is securely encrypted at transit",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_31",
+      "name": "Ensure all data stored in the ElastiCache Replication Group is securely encrypted at transit and has auth token",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_elasticache_security_group": [
+    {
+      "id": "CKV_AWS_196",
+      "name": "Ensure no aws_elasticache_security_group resources exist",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_23",
+      "name": "Ensure every security group and rule has a description",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_elasticsearch_domain": [
+    {
+      "id": "CKV2_AWS_52",
+      "name": "Ensure AWS ElasticSearch/OpenSearch Fine-grained access control is enabled",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_59",
+      "name": "Ensure ElasticSearch/OpenSearch has dedicated master node enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_137",
+      "name": "Ensure that Elasticsearch is configured inside a VPC",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_228",
+      "name": "Verify Elasticsearch domain is using an up to date TLS policy",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_247",
+      "name": "Ensure all data stored in the Elasticsearch is encrypted with a CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_248",
+      "name": "Ensure that Elasticsearch is not using the default Security Group",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_318",
+      "name": "Ensure Elasticsearch domains are configured with at least three dedicated master nodes for HA",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_5",
+      "name": "Ensure all data stored in the Elasticsearch is securely encrypted at rest",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_6",
+      "name": "Ensure all Elasticsearch has node-to-node encryption enabled",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_83",
+      "name": "Ensure Elasticsearch Domain enforces HTTPS",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_elb": [
+    {
+      "id": "CKV2_AWS_15",
+      "name": "Ensure that auto Scaling groups that are associated with a load balancer are using Elastic Load Balancing health checks.",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_autoscaling_attachment"
+      ]
+    },
+    {
+      "id": "CKV_AWS_127",
+      "name": "Ensure that Elastic Load Balancer(s) uses SSL certificates provided by AWS Certificate Manager",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_138",
+      "name": "Ensure that ELB is cross-zone-load-balancing enabled",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_328",
+      "name": "Ensure that ALB is configured with defensive or strictest desync mitigation mode",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_376",
+      "name": "Ensure AWS Elastic Load Balancer listener uses TLS/SSL",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_emr_block_public_access_configuration": [
+    {
+      "id": "CKV_AWS_390",
+      "name": "Ensure AWS EMR block public access setting is enabled",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_emr_cluster": [
+    {
+      "id": "CKV2_AWS_55",
+      "name": "Ensure AWS EMR cluster is configured with security configuration",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_7",
+      "name": "Ensure that Amazon EMR clusters' security groups are not open to the world",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_security_group"
+      ]
+    },
+    {
+      "id": "CKV_AWS_114",
+      "name": "Ensure that EMR clusters with Kerberos have Kerberos Realm set",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_emr_security_configuration": [
+    {
+      "id": "CKV_AWS_171",
+      "name": "Ensure EMR Cluster security configuration encryption is using SSE-KMS",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_349",
+      "name": "Ensure EMR Cluster security configuration encrypts local disks",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_350",
+      "name": "Ensure EMR Cluster security configuration encrypts EBS disks",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_351",
+      "name": "Ensure EMR Cluster security configuration encrypts InTransit",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_fsx_lustre_file_system": [
+    {
+      "id": "CKV_AWS_190",
+      "name": "Ensure lustre file systems is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_fsx_ontap_file_system": [
+    {
+      "id": "CKV_AWS_178",
+      "name": "Ensure fx ontap file system is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_fsx_openzfs_file_system": [
+    {
+      "id": "CKV_AWS_203",
+      "name": "Ensure resource is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_fsx_windows_file_system": [
+    {
+      "id": "CKV_AWS_179",
+      "name": "Ensure FSX Windows filesystem is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_glacier_vault": [
+    {
+      "id": "CKV_AWS_167",
+      "name": "Ensure Glacier Vault access policy is not public by only allowing specific services or principals to access it",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_glue_crawler": [
+    {
+      "id": "CKV_AWS_195",
+      "name": "Ensure Glue component has a security configuration associated",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_glue_data_catalog_encryption_settings": [
+    {
+      "id": "CKV_AWS_94",
+      "name": "Ensure Glue Data Catalog Encryption is enabled",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_glue_dev_endpoint": [
+    {
+      "id": "CKV_AWS_195",
+      "name": "Ensure Glue component has a security configuration associated",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_glue_job": [
+    {
+      "id": "CKV_AWS_195",
+      "name": "Ensure Glue component has a security configuration associated",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_glue_security_configuration": [
+    {
+      "id": "CKV_AWS_99",
+      "name": "Ensure Glue Security Configuration Encryption is enabled",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_guardduty_detector": [
+    {
+      "id": "CKV2_AWS_3",
+      "name": "Ensure GuardDuty is enabled to specific org/region",
+      "cat": [
+        "GENERAL_SECURITY"
+      ],
+      "connected_types": [
+        "aws_guardduty_organization_configuration"
+      ]
+    },
+    {
+      "id": "CKV_AWS_238",
+      "name": "Ensure that GuardDuty detector is enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_iam_access_key": [
+    {
+      "id": "CKV_AWS_348",
+      "name": "Ensure IAM root user does not have Access keys",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_iam_account_password_policy": [
+    {
+      "id": "CKV_AWS_10",
+      "name": "Ensure IAM password policy requires minimum length of 14 or greater",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_11",
+      "name": "Ensure IAM password policy requires at least one lowercase letter",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_12",
+      "name": "Ensure IAM password policy requires at least one number",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_13",
+      "name": "Ensure IAM password policy prevents password reuse",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_14",
+      "name": "Ensure IAM password policy requires at least one symbol",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_15",
+      "name": "Ensure IAM password policy requires at least one uppercase letter",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_9",
+      "name": "Ensure IAM password policy expires passwords within 90 days or less",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_iam_group": [
+    {
+      "id": "CKV2_AWS_14",
+      "name": "Ensure that IAM groups includes at least one IAM user",
+      "cat": [
+        "IAM"
+      ],
+      "connected_types": [
+        "aws_iam_group_membership",
+        "aws_iam_user"
+      ]
+    }
+  ],
+  "aws_iam_group_membership": [
+    {
+      "id": "CKV2_AWS_21",
+      "name": "Ensure that all IAM users are members of at least one IAM group.",
+      "cat": [
+        "IAM"
+      ],
+      "connected_types": [
+        "aws_iam_group",
+        "aws_iam_user"
+      ]
+    }
+  ],
+  "aws_iam_group_policy": [
+    {
+      "id": "CKV2_AWS_40",
+      "name": "Ensure AWS IAM policy does not allow full IAM privileges",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_286",
+      "name": "Ensure IAM policies does not allow privilege escalation",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_287",
+      "name": "Ensure IAM policies does not allow credentials exposure",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_288",
+      "name": "Ensure IAM policies does not allow data exfiltration",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_289",
+      "name": "Ensure IAM policies does not allow permissions management / resource exposure without constraints",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_290",
+      "name": "Ensure IAM policies does not allow write access without constraints",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_355",
+      "name": "Ensure no IAM policies documents allow \"*\" as a statement's resource for restrictable actions",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_62",
+      "name": "Ensure IAM policies that allow full \"*-*\" administrative privileges are not created",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_63",
+      "name": "Ensure no IAM policies documents allow \"*\" as a statement's actions",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_iam_group_policy_attachment": [
+    {
+      "id": "CKV2_AWS_56",
+      "name": "Ensure AWS Managed IAMFullAccess IAM policy is not used.",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_274",
+      "name": "Disallow IAM roles, users, and groups from using the AWS AdministratorAccess policy",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_iam_policy": [
+    {
+      "id": "CKV2_AWS_40",
+      "name": "Ensure AWS IAM policy does not allow full IAM privileges",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_286",
+      "name": "Ensure IAM policies does not allow privilege escalation",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_287",
+      "name": "Ensure IAM policies does not allow credentials exposure",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_288",
+      "name": "Ensure IAM policies does not allow data exfiltration",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_289",
+      "name": "Ensure IAM policies does not allow permissions management / resource exposure without constraints",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_290",
+      "name": "Ensure IAM policies does not allow write access without constraints",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_355",
+      "name": "Ensure no IAM policies documents allow \"*\" as a statement's resource for restrictable actions",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_62",
+      "name": "Ensure IAM policies that allow full \"*-*\" administrative privileges are not created",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_63",
+      "name": "Ensure no IAM policies documents allow \"*\" as a statement's actions",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_iam_policy_attachment": [
+    {
+      "id": "CKV2_AWS_56",
+      "name": "Ensure AWS Managed IAMFullAccess IAM policy is not used.",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_274",
+      "name": "Disallow IAM roles, users, and groups from using the AWS AdministratorAccess policy",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_40",
+      "name": "Ensure IAM policies are attached only to groups or roles (Reducing access management complexity may in-turn reduce opportunity for a principal to inadvertently receive or retain excessive privileges.)",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_iam_role": [
+    {
+      "id": "CKV2_AWS_56",
+      "name": "Ensure AWS Managed IAMFullAccess IAM policy is not used.",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_274",
+      "name": "Disallow IAM roles, users, and groups from using the AWS AdministratorAccess policy",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_60",
+      "name": "Ensure IAM role allows only specific services or principals to assume it",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_61",
+      "name": "Ensure AWS IAM policy does not allow assume role permission across all services",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_iam_role_policy": [
+    {
+      "id": "CKV2_AWS_40",
+      "name": "Ensure AWS IAM policy does not allow full IAM privileges",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_286",
+      "name": "Ensure IAM policies does not allow privilege escalation",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_287",
+      "name": "Ensure IAM policies does not allow credentials exposure",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_288",
+      "name": "Ensure IAM policies does not allow data exfiltration",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_289",
+      "name": "Ensure IAM policies does not allow permissions management / resource exposure without constraints",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_290",
+      "name": "Ensure IAM policies does not allow write access without constraints",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_355",
+      "name": "Ensure no IAM policies documents allow \"*\" as a statement's resource for restrictable actions",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_62",
+      "name": "Ensure IAM policies that allow full \"*-*\" administrative privileges are not created",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_63",
+      "name": "Ensure no IAM policies documents allow \"*\" as a statement's actions",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_iam_role_policy_attachment": [
+    {
+      "id": "CKV2_AWS_56",
+      "name": "Ensure AWS Managed IAMFullAccess IAM policy is not used.",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_274",
+      "name": "Disallow IAM roles, users, and groups from using the AWS AdministratorAccess policy",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_iam_user": [
+    {
+      "id": "CKV2_AWS_22",
+      "name": "Ensure an IAM User does not have access to the console",
+      "cat": [
+        "IAM"
+      ],
+      "connected_types": [
+        "aws_iam_user_login_profile"
+      ]
+    },
+    {
+      "id": "CKV_AWS_273",
+      "name": "Ensure access is controlled through SSO and not AWS IAM defined users",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_iam_user_policy": [
+    {
+      "id": "CKV2_AWS_40",
+      "name": "Ensure AWS IAM policy does not allow full IAM privileges",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_286",
+      "name": "Ensure IAM policies does not allow privilege escalation",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_287",
+      "name": "Ensure IAM policies does not allow credentials exposure",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_288",
+      "name": "Ensure IAM policies does not allow data exfiltration",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_289",
+      "name": "Ensure IAM policies does not allow permissions management / resource exposure without constraints",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_290",
+      "name": "Ensure IAM policies does not allow write access without constraints",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_355",
+      "name": "Ensure no IAM policies documents allow \"*\" as a statement's resource for restrictable actions",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_40",
+      "name": "Ensure IAM policies are attached only to groups or roles (Reducing access management complexity may in-turn reduce opportunity for a principal to inadvertently receive or retain excessive privileges.)",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_62",
+      "name": "Ensure IAM policies that allow full \"*-*\" administrative privileges are not created",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_63",
+      "name": "Ensure no IAM policies documents allow \"*\" as a statement's actions",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_iam_user_policy_attachment": [
+    {
+      "id": "CKV2_AWS_56",
+      "name": "Ensure AWS Managed IAMFullAccess IAM policy is not used.",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_274",
+      "name": "Disallow IAM roles, users, and groups from using the AWS AdministratorAccess policy",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_40",
+      "name": "Ensure IAM policies are attached only to groups or roles (Reducing access management complexity may in-turn reduce opportunity for a principal to inadvertently receive or retain excessive privileges.)",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_imagebuilder_component": [
+    {
+      "id": "CKV_AWS_180",
+      "name": "Ensure Image Builder component is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_imagebuilder_distribution_configuration": [
+    {
+      "id": "CKV_AWS_199",
+      "name": "Ensure Image Builder Distribution Configuration encrypts AMI's using KMS - a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_imagebuilder_image_recipe": [
+    {
+      "id": "CKV_AWS_200",
+      "name": "Ensure that Image Recipe EBS Disk are encrypted with CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_instance": [
+    {
+      "id": "CKV2_AWS_41",
+      "name": "Ensure an IAM role is attached to EC2 instance",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_135",
+      "name": "Ensure that EC2 is EBS optimized",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_46",
+      "name": "Ensure no hard-coded secrets exist in EC2 user data",
+      "cat": [
+        "SECRETS"
+      ]
+    },
+    {
+      "id": "CKV_AWS_79",
+      "name": "Ensure Instance Metadata Service Version 1 is not enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_8",
+      "name": "Ensure all data stored in the Launch configuration or instance Elastic Blocks Store is securely encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_88",
+      "name": "EC2 instance should not have public IP.",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_kendra_index": [
+    {
+      "id": "CKV_AWS_262",
+      "name": "Ensure Kendra index Server side encryption uses CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_keyspaces_table": [
+    {
+      "id": "CKV_AWS_265",
+      "name": "Ensure Keyspaces Table uses CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_kinesis_firehose_delivery_stream": [
+    {
+      "id": "CKV_AWS_240",
+      "name": "Ensure Kinesis Firehose delivery stream is encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_241",
+      "name": "Ensure that Kinesis Firehose Delivery Streams are encrypted with CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_kinesis_stream": [
+    {
+      "id": "CKV_AWS_185",
+      "name": "Ensure Kinesis Stream is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_43",
+      "name": "Ensure Kinesis Stream is securely encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_kinesis_video_stream": [
+    {
+      "id": "CKV_AWS_177",
+      "name": "Ensure Kinesis Video Stream is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_kms_key": [
+    {
+      "id": "CKV2_AWS_64",
+      "name": "Ensure KMS key Policy is defined",
+      "cat": [
+        "IAM"
+      ],
+      "connected_types": [
+        "aws_kms_key_policy"
+      ]
+    },
+    {
+      "id": "CKV_AWS_227",
+      "name": "Ensure KMS key is enabled",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_33",
+      "name": "Ensure KMS key policy does not contain wildcard (*) principal",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_7",
+      "name": "Ensure rotation for customer created CMKs is enabled",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_lambda_function": [
+    {
+      "id": "CKV2_AWS_75",
+      "name": "Ensure no open CORS policy",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_lambda_function_url"
+      ]
+    },
+    {
+      "id": "CKV_AWS_115",
+      "name": "Ensure that AWS Lambda function is configured for function-level concurrent execution limit",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_116",
+      "name": "Ensure that AWS Lambda function is configured for a Dead Letter Queue(DLQ)",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_117",
+      "name": "Ensure that AWS Lambda function is configured inside a VPC",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_173",
+      "name": "Check encryption settings for Lambda environmental variable",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_363",
+      "name": "Ensure Lambda Runtime is not deprecated",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_45",
+      "name": "Ensure no hard-coded secrets exist in lambda environment",
+      "cat": [
+        "SECRETS"
+      ]
+    }
+  ],
+  "aws_lambda_function_url": [
+    {
+      "id": "CKV_AWS_258",
+      "name": "Ensure that Lambda function URLs AuthType is not None",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_lambda_permission": [
+    {
+      "id": "CKV_AWS_301",
+      "name": "Ensure that AWS Lambda function is not publicly accessible",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_364",
+      "name": "Ensure that AWS Lambda function permissions delegated to AWS services are limited by SourceArn or SourceAccount",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_launch_configuration": [
+    {
+      "id": "CKV_AWS_341",
+      "name": "Ensure Launch template should not have a metadata response hop limit greater than 1",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_389",
+      "name": "Ensure AWS Auto Scaling group launch configuration doesn't have public IP address assignment enabled",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_46",
+      "name": "Ensure no hard-coded secrets exist in EC2 user data",
+      "cat": [
+        "SECRETS"
+      ]
+    },
+    {
+      "id": "CKV_AWS_79",
+      "name": "Ensure Instance Metadata Service Version 1 is not enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_8",
+      "name": "Ensure all data stored in the Launch configuration or instance Elastic Blocks Store is securely encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_launch_template": [
+    {
+      "id": "CKV_AWS_341",
+      "name": "Ensure Launch template should not have a metadata response hop limit greater than 1",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_46",
+      "name": "Ensure no hard-coded secrets exist in EC2 user data",
+      "cat": [
+        "SECRETS"
+      ]
+    },
+    {
+      "id": "CKV_AWS_79",
+      "name": "Ensure Instance Metadata Service Version 1 is not enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_88",
+      "name": "EC2 instance should not have public IP.",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_lb": [
+    {
+      "id": "CKV2_AWS_20",
+      "name": "Ensure that ALB redirects HTTP requests into HTTPS ones",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_alb_listener",
+        "aws_lb_listener"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_28",
+      "name": "Ensure public facing ALB are protected by WAF",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_wafregional_web_acl_association",
+        "aws_wafv2_web_acl_association"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_76",
+      "name": "Ensure AWS ALB attached WAFv2 WebACL is configured with AMR for Log4j Vulnerability",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_wafv2_web_acl_association"
+      ]
+    },
+    {
+      "id": "CKV_AWS_131",
+      "name": "Ensure that ALB drops HTTP headers",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_150",
+      "name": "Ensure that Load Balancer has deletion protection enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_152",
+      "name": "Ensure that Load Balancer (Network/Gateway) has cross-zone load balancing enabled",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_328",
+      "name": "Ensure that ALB is configured with defensive or strictest desync mitigation mode",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_lb_listener": [
+    {
+      "id": "CKV2_AWS_74",
+      "name": "Ensure AWS Load Balancers use strong ciphers",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_103",
+      "name": "Ensure that load balancer is using at least TLS 1.2",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_lb"
+      ]
+    },
+    {
+      "id": "CKV_AWS_2",
+      "name": "Ensure ALB protocol is HTTPS",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_lb_target_group": [
+    {
+      "id": "CKV2_AWS_15",
+      "name": "Ensure that auto Scaling groups that are associated with a load balancer are using Elastic Load Balancing health checks.",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_autoscaling_attachment"
+      ]
+    },
+    {
+      "id": "CKV_AWS_261",
+      "name": "Ensure HTTP HTTPS Target group defines Healthcheck",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_378",
+      "name": "Ensure AWS Load Balancer doesn't use HTTP protocol",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_alb_listener",
+        "aws_lb_listener"
+      ]
+    }
+  ],
+  "aws_load_balancer_policy": [
+    {
+      "id": "CKV_AWS_213",
+      "name": "Ensure ELB Policy uses only secure protocols",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_memorydb_cluster": [
+    {
+      "id": "CKV_AWS_201",
+      "name": "Ensure MemoryDB is encrypted at rest using KMS CMKs",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_202",
+      "name": "Ensure MemoryDB data is encrypted in transit",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_memorydb_snapshot": [
+    {
+      "id": "CKV_AWS_278",
+      "name": "Ensure MemoryDB snapshot is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_mq_broker": [
+    {
+      "id": "CKV_AWS_207",
+      "name": "Ensure MQ Broker minor version updates are enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_208",
+      "name": "Ensure MQ Broker version is current",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_209",
+      "name": "Ensure MQ broker encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_69",
+      "name": "Ensure MQ Broker is not publicly exposed",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_mq_configuration": [
+    {
+      "id": "CKV_AWS_208",
+      "name": "Ensure MQ Broker version is current",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_msk_cluster": [
+    {
+      "id": "CKV_AWS_291",
+      "name": "Ensure MSK nodes are private",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_81",
+      "name": "Ensure MSK Cluster encryption in rest and transit is enabled",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_mwaa_environment": [
+    {
+      "id": "CKV2_AWS_66",
+      "name": "Ensure MWAA environment is not publicly accessible",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_neptune_cluster": [
+    {
+      "id": "CKV2_AWS_58",
+      "name": "Ensure AWS Neptune cluster deletion protection is enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_347",
+      "name": "Ensure Neptune is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_359",
+      "name": "Neptune DB clusters should have IAM database authentication enabled",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_44",
+      "name": "Ensure Neptune storage is securely encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_neptune_cluster_instance": [
+    {
+      "id": "CKV_AWS_102",
+      "name": "Ensure Neptune Cluster instance is not publicly available",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_neptune_cluster_snapshot": [
+    {
+      "id": "CKV_AWS_279",
+      "name": "Ensure Neptune snapshot is securely encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_280",
+      "name": "Ensure Neptune snapshot is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_network_acl": [
+    {
+      "id": "CKV2_AWS_1",
+      "name": "Ensure that all NACL are attached to subnets",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_subnet",
+        "aws_vpc"
+      ]
+    },
+    {
+      "id": "CKV_AWS_229",
+      "name": "Ensure no NACL allow ingress from 0.0.0.0:0 to port 21",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_230",
+      "name": "Ensure no NACL allow ingress from 0.0.0.0:0 to port 20",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_231",
+      "name": "Ensure no NACL allow ingress from 0.0.0.0:0 to port 3389",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_232",
+      "name": "Ensure no NACL allow ingress from 0.0.0.0:0 to port 22",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_network_acl_rule": [
+    {
+      "id": "CKV_AWS_229",
+      "name": "Ensure no NACL allow ingress from 0.0.0.0:0 to port 21",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_230",
+      "name": "Ensure no NACL allow ingress from 0.0.0.0:0 to port 20",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_231",
+      "name": "Ensure no NACL allow ingress from 0.0.0.0:0 to port 3389",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_232",
+      "name": "Ensure no NACL allow ingress from 0.0.0.0:0 to port 22",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_352",
+      "name": "Ensure NACL ingress does not allow all Ports",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_networkfirewall_firewall": [
+    {
+      "id": "CKV_AWS_344",
+      "name": "Ensure that Network firewalls have deletion protection enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_345",
+      "name": "Ensure that Network firewall encryption is via a CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_networkfirewall_firewall_policy": [
+    {
+      "id": "CKV_AWS_346",
+      "name": "Ensure Network Firewall Policy defines an encryption configuration that uses a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_networkfirewall_rule_group": [
+    {
+      "id": "CKV_AWS_345",
+      "name": "Ensure that Network firewall encryption is via a CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_opensearch_domain": [
+    {
+      "id": "CKV2_AWS_52",
+      "name": "Ensure AWS ElasticSearch/OpenSearch Fine-grained access control is enabled",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_59",
+      "name": "Ensure ElasticSearch/OpenSearch has dedicated master node enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_137",
+      "name": "Ensure that Elasticsearch is configured inside a VPC",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_228",
+      "name": "Verify Elasticsearch domain is using an up to date TLS policy",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_247",
+      "name": "Ensure all data stored in the Elasticsearch is encrypted with a CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_248",
+      "name": "Ensure that Elasticsearch is not using the default Security Group",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_318",
+      "name": "Ensure Elasticsearch domains are configured with at least three dedicated master nodes for HA",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_5",
+      "name": "Ensure all data stored in the Elasticsearch is securely encrypted at rest",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_6",
+      "name": "Ensure all Elasticsearch has node-to-node encryption enabled",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_83",
+      "name": "Ensure Elasticsearch Domain enforces HTTPS",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_qldb_ledger": [
+    {
+      "id": "CKV_AWS_170",
+      "name": "Ensure QLDB ledger permissions mode is set to STANDARD",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_172",
+      "name": "Ensure QLDB ledger has deletion protection enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_rds_cluster": [
+    {
+      "id": "CKV_AWS_139",
+      "name": "Ensure that RDS clusters have deletion protection enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_162",
+      "name": "Ensure RDS cluster has IAM authentication enabled",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_250",
+      "name": "Ensure that RDS PostgreSQL instances use a non vulnerable version with the log_fdw extension (https://aws.amazon.com/security/security-bulletins/AWS-2022-004/)",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_313",
+      "name": "Ensure RDS cluster configured to copy tags to snapshots",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_326",
+      "name": "Ensure that RDS Aurora Clusters have backtracking enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_327",
+      "name": "Ensure RDS Clusters are encrypted using KMS CMKs",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_96",
+      "name": "Ensure all data stored in Aurora is securely encrypted at rest",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_rds_cluster_activity_stream": [
+    {
+      "id": "CKV_AWS_246",
+      "name": "Ensure RDS Cluster activity streams are encrypted using KMS CMKs",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_rds_cluster_instance": [
+    {
+      "id": "CKV_AWS_17",
+      "name": "Ensure all data stored in RDS is not publicly accessible",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_226",
+      "name": "Ensure DB instance gets all minor upgrades automatically",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_354",
+      "name": "Ensure RDS Performance Insights are encrypted using KMS CMKs",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_rds_global_cluster": [
+    {
+      "id": "CKV_AWS_140",
+      "name": "Ensure that RDS global clusters are encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_redshift_cluster": [
+    {
+      "id": "CKV_AWS_141",
+      "name": "Ensured that Redshift cluster allowing version upgrade by default",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_142",
+      "name": "Ensure that Redshift cluster is encrypted by KMS",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_154",
+      "name": "Ensure Redshift is not deployed outside of a VPC",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_320",
+      "name": "Ensure Redshift clusters do not use the default database name",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_321",
+      "name": "Ensure Redshift clusters use enhanced VPC routing",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_391",
+      "name": "Avoid AWS Redshift cluster with commonly used master username and public access setting enabled",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_64",
+      "name": "Ensure all data stored in the Redshift cluster is securely encrypted at rest",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_87",
+      "name": "Redshift cluster should not be publicly accessible",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_redshift_parameter_group": [
+    {
+      "id": "CKV_AWS_105",
+      "name": "Ensure Redshift uses SSL",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_redshift_security_group": [
+    {
+      "id": "CKV_AWS_23",
+      "name": "Ensure every security group and rule has a description",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_redshift_snapshot_copy_grant": [
+    {
+      "id": "CKV_AWS_281",
+      "name": "Ensure RedShift snapshot copy is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_redshiftserverless_namespace": [
+    {
+      "id": "CKV_AWS_282",
+      "name": "Ensure that Redshift Serverless namespace is encrypted by KMS using a customer managed key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_route": [
+    {
+      "id": "CKV2_AWS_35",
+      "name": "AWS NAT Gateways should be utilized for the default route",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_44",
+      "name": "Ensure AWS route table with VPC peering does not contain routes overly permissive to all traffic",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_route53_record": [
+    {
+      "id": "CKV2_AWS_23",
+      "name": "Route53 A Record has Attached Resource",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_alb",
+        "aws_api_gateway_domain_name",
+        "aws_apigatewayv2_domain_name",
+        "aws_cloudfront_distribution",
+        "aws_db_instance",
+        "aws_eip",
+        "aws_elastic_beanstalk_environment",
+        "aws_elb",
+        "aws_globalaccelerator_accelerator",
+        "aws_instance",
+        "aws_lb",
+        "aws_lightsail_instance",
+        "aws_lightsail_static_ip",
+        "aws_route53_record",
+        "aws_s3_bucket",
+        "aws_vpc_endpoint"
+      ]
+    }
+  ],
+  "aws_route53_zone": [
+    {
+      "id": "CKV2_AWS_38",
+      "name": "Ensure Domain Name System Security Extensions (DNSSEC) signing is enabled for Amazon Route 53 public hosted zones",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_route53_hosted_zone_dnssec",
+        "aws_route53_key_signing_key",
+        "aws_route53_zone_association"
+      ]
+    }
+  ],
+  "aws_route53domains_registered_domain": [
+    {
+      "id": "CKV_AWS_377",
+      "name": "Ensure Route 53 domains have transfer lock protection",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_route_table": [
+    {
+      "id": "CKV2_AWS_35",
+      "name": "AWS NAT Gateways should be utilized for the default route",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_44",
+      "name": "Ensure AWS route table with VPC peering does not contain routes overly permissive to all traffic",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_s3_access_point": [
+    {
+      "id": "CKV_AWS_392",
+      "name": "Ensure AWS S3 access point block public access setting is enabled",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_s3_bucket": [
+    {
+      "id": "CKV2_AWS_6",
+      "name": "Ensure that S3 bucket has a Public Access block",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_s3_bucket_public_access_block"
+      ]
+    },
+    {
+      "id": "CKV_AWS_143",
+      "name": "Ensure that S3 bucket has lock configuration enabled by default",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_144",
+      "name": "Ensure that S3 bucket has cross-region replication enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ],
+      "connected_types": [
+        "aws_s3_bucket_replication_configuration"
+      ]
+    },
+    {
+      "id": "CKV_AWS_145",
+      "name": "Ensure that S3 buckets are encrypted with KMS by default",
+      "cat": [
+        "ENCRYPTION"
+      ],
+      "connected_types": [
+        "aws_s3_bucket_server_side_encryption_configuration"
+      ]
+    },
+    {
+      "id": "CKV_AWS_19",
+      "name": "Ensure all data stored in the S3 bucket is securely encrypted at rest",
+      "cat": [
+        "ENCRYPTION"
+      ],
+      "connected_types": [
+        "aws_s3_bucket_server_side_encryption_configuration"
+      ]
+    },
+    {
+      "id": "CKV_AWS_20",
+      "name": "S3 Bucket has an ACL defined which allows public READ access.",
+      "cat": [
+        "GENERAL_SECURITY"
+      ],
+      "connected_types": [
+        "aws_s3_bucket_acl"
+      ]
+    },
+    {
+      "id": "CKV_AWS_57",
+      "name": "S3 Bucket has an ACL defined which allows public WRITE access.",
+      "cat": [
+        "GENERAL_SECURITY"
+      ],
+      "connected_types": [
+        "aws_s3_bucket_acl"
+      ]
+    },
+    {
+      "id": "CKV_AWS_70",
+      "name": "Ensure S3 bucket does not allow an action with any Principal",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_93",
+      "name": "Ensure S3 bucket policy does not lockout all but root user. (Prevent lockouts needing root account fixes)",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_s3_bucket_acl": [
+    {
+      "id": "CKV2_AWS_43",
+      "name": "Ensure S3 Bucket does not allow access to all Authenticated users",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_375",
+      "name": "Ensure AWS S3 bucket does not have global view ACL permissions enabled",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_379",
+      "name": "Ensure AWS S3 bucket is configured with secure data transport policy",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_s3_bucket_lifecycle_configuration": [
+    {
+      "id": "CKV_AWS_300",
+      "name": "Ensure S3 lifecycle configuration sets period for aborting failed uploads",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_s3_bucket_object": [
+    {
+      "id": "CKV_AWS_186",
+      "name": "Ensure S3 bucket Object is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_s3_bucket_ownership_controls": [
+    {
+      "id": "CKV2_AWS_65",
+      "name": "Ensure access control lists for S3 buckets are disabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_s3_bucket_policy": [
+    {
+      "id": "CKV_AWS_70",
+      "name": "Ensure S3 bucket does not allow an action with any Principal",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_93",
+      "name": "Ensure S3 bucket policy does not lockout all but root user. (Prevent lockouts needing root account fixes)",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_s3_bucket_public_access_block": [
+    {
+      "id": "CKV_AWS_53",
+      "name": "Ensure S3 bucket has block public ACLS enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_54",
+      "name": "Ensure S3 bucket has block public policy enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_55",
+      "name": "Ensure S3 bucket has ignore public ACLs enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_56",
+      "name": "Ensure S3 bucket has 'restrict_public_buckets' enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_s3_object_copy": [
+    {
+      "id": "CKV_AWS_181",
+      "name": "Ensure S3 Object Copy is encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_sagemaker_data_quality_job_definition": [
+    {
+      "id": "CKV_AWS_367",
+      "name": "Ensure Amazon Sagemaker Data Quality Job uses KMS to encrypt model artifacts",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_368",
+      "name": "Ensure Amazon Sagemaker Data Quality Job uses KMS to encrypt data on attached storage volume",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_369",
+      "name": "Ensure Amazon Sagemaker Data Quality Job encrypts all communications between instances used for monitoring jobs",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_sagemaker_domain": [
+    {
+      "id": "CKV_AWS_187",
+      "name": "Ensure Sagemaker domain and notebook instance are encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_sagemaker_endpoint_configuration": [
+    {
+      "id": "CKV_AWS_98",
+      "name": "Ensure all data stored in the Sagemaker Endpoint is securely encrypted at rest",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_sagemaker_flow_definition": [
+    {
+      "id": "CKV_AWS_372",
+      "name": "Ensure Amazon SageMaker Flow Definition uses KMS for output configurations",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_sagemaker_model": [
+    {
+      "id": "CKV_AWS_370",
+      "name": "Ensure Amazon SageMaker model uses network isolation",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_sagemaker_notebook_instance": [
+    {
+      "id": "CKV2_AWS_68",
+      "name": "Ensure SageMaker notebook instance IAM policy is not overly permissive",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_iam_role"
+      ]
+    },
+    {
+      "id": "CKV_AWS_122",
+      "name": "Ensure that direct internet access is disabled for an Amazon SageMaker Notebook Instance",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_187",
+      "name": "Ensure Sagemaker domain and notebook instance are encrypted by KMS using a customer managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_22",
+      "name": "Ensure SageMaker Notebook is encrypted at rest using KMS CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_306",
+      "name": "Ensure SageMaker notebook instances should be launched into a custom VPC",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_307",
+      "name": "Ensure SageMaker Users should not have root access to SageMaker notebook instances",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_371",
+      "name": "Ensure Amazon SageMaker Notebook Instance only allows for IMDSv2",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_scheduler_schedule": [
+    {
+      "id": "CKV_AWS_297",
+      "name": "Ensure EventBridge Scheduler Schedule uses Customer Managed Key (CMK)",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_secretsmanager_secret": [
+    {
+      "id": "CKV2_AWS_57",
+      "name": "Ensure Secrets Manager secrets should have automatic rotation enabled",
+      "cat": [
+        "GENERAL_SECURITY"
+      ],
+      "connected_types": [
+        "aws_secretsmanager_secret_rotation"
+      ]
+    },
+    {
+      "id": "CKV_AWS_149",
+      "name": "Ensure that Secrets Manager secret is encrypted using KMS CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_secretsmanager_secret_rotation": [
+    {
+      "id": "CKV_AWS_304",
+      "name": "Ensure Secrets Manager secrets should be rotated within 90 days",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_security_group": [
+    {
+      "id": "CKV2_AWS_5",
+      "name": "Ensure that Security Groups are attached to another resource",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_alb",
+        "aws_apigatewayv2_vpc_link",
+        "aws_apprunner_vpc_connector",
+        "aws_appstream_fleet",
+        "aws_batch_compute_environment",
+        "aws_cloudwatch_event_target",
+        "aws_codebuild_project",
+        "aws_codestarconnections_host",
+        "aws_dax_cluster",
+        "aws_db_instance",
+        "aws_dms_replication_config",
+        "aws_dms_replication_instance",
+        "aws_docdb_cluster",
+        "aws_docdbelastic_cluster",
+        "aws_ec2_client_vpn_endpoint",
+        "aws_ec2_client_vpn_network_association",
+        "aws_ec2_instance_connect_endpoint",
+        "aws_ec2_spot_fleet_request",
+        "aws_ecs_service",
+        "aws_efs_mount_target",
+        "aws_eks_cluster",
+        "aws_eks_node_group",
+        "aws_elasticache_cluster",
+        "aws_elasticache_replication_group",
+        "aws_elasticache_serverless_cache",
+        "aws_elasticsearch_domain",
+        "aws_elb",
+        "aws_emr_cluster",
+        "aws_emr_studio",
+        "aws_fsx_file_cache",
+        "aws_fsx_lustre_file_system",
+        "aws_fsx_ontap_file_system",
+        "aws_fsx_openzfs_file_system",
+        "aws_fsx_windows_file_system",
+        "aws_glue_dev_endpoint",
+        "aws_grafana_workspace",
+        "aws_imagebuilder_infrastructure_configuration",
+        "aws_instance",
+        "aws_lambda_function",
+        "aws_launch_configuration",
+        "aws_launch_template",
+        "aws_lb",
+        "aws_m2_environment",
+        "aws_memorydb_cluster",
+        "aws_mq_broker",
+        "aws_msk_cluster",
+        "aws_msk_vpc_connection",
+        "aws_mskconnect_connector",
+        "aws_mwaa_environment",
+        "aws_neptune_cluster",
+        "aws_network_interface",
+        "aws_opensearch_domain",
+        "aws_opensearch_vpc_endpoint",
+        "aws_opensearchserverless_vpc_endpoint",
+        "aws_quicksight_vpc_connection",
+        "aws_rds_cluster",
+        "aws_redshift_cluster",
+        "aws_redshiftserverless_workgroup",
+        "aws_route53_resolver_endpoint",
+        "aws_sagemaker_notebook_instance",
+        "aws_spot_instance_request",
+        "aws_transfer_server",
+        "aws_verifiedaccess_endpoint",
+        "aws_vpc_endpoint",
+        "aws_vpclattice_resource_gateway",
+        "aws_vpclattice_service_network_vpc_association"
+      ]
+    },
+    {
+      "id": "CKV_AWS_23",
+      "name": "Ensure every security group and rule has a description",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_24",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 22",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_25",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 3389",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_260",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 80",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_277",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port -1",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_382",
+      "name": "Ensure no security groups allow egress from 0.0.0.0:0 to port -1",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_security_group_rule": [
+    {
+      "id": "CKV_AWS_23",
+      "name": "Ensure every security group and rule has a description",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_24",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 22",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_25",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 3389",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_260",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 80",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_277",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port -1",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_382",
+      "name": "Ensure no security groups allow egress from 0.0.0.0:0 to port -1",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_ses_configuration_set": [
+    {
+      "id": "CKV_AWS_365",
+      "name": "Ensure SES Configuration Set enforces TLS usage",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_sns_topic": [
+    {
+      "id": "CKV_AWS_26",
+      "name": "Ensure all data stored in the SNS topic is encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_sns_topic_policy": [
+    {
+      "id": "CKV_AWS_169",
+      "name": "Ensure SNS topic policy is not public by only allowing specific services or principals to access it",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_385",
+      "name": "Ensure AWS SNS topic policies do not allow cross-account access",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_sqs_queue": [
+    {
+      "id": "CKV2_AWS_73",
+      "name": "Ensure AWS SQS uses CMK not AWS default keys for encryption",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_168",
+      "name": "Ensure SQS queue policy is not public by only allowing specific services or principals to access it",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_27",
+      "name": "Ensure all data stored in the SQS queue is encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_sqs_queue_policy": [
+    {
+      "id": "CKV_AWS_168",
+      "name": "Ensure SQS queue policy is not public by only allowing specific services or principals to access it",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_387",
+      "name": "Ensure SQS policy does not allow public access through wildcards",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_72",
+      "name": "Ensure SQS policy does not allow ALL (*) actions.",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_ssm_document": [
+    {
+      "id": "CKV_AWS_112",
+      "name": "Ensure Session Manager data is encrypted in transit",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_303",
+      "name": "Ensure SSM documents are not Public",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    }
+  ],
+  "aws_ssm_parameter": [
+    {
+      "id": "CKV2_AWS_34",
+      "name": "AWS SSM Parameter should be Encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_337",
+      "name": "Ensure SSM parameters are using KMS CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_ssoadmin_managed_policy_attachment": [
+    {
+      "id": "CKV2_AWS_56",
+      "name": "Ensure AWS Managed IAMFullAccess IAM policy is not used.",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_274",
+      "name": "Disallow IAM roles, users, and groups from using the AWS AdministratorAccess policy",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_ssoadmin_permission_set_inline_policy": [
+    {
+      "id": "CKV2_AWS_40",
+      "name": "Ensure AWS IAM policy does not allow full IAM privileges",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_286",
+      "name": "Ensure IAM policies does not allow privilege escalation",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_287",
+      "name": "Ensure IAM policies does not allow credentials exposure",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_288",
+      "name": "Ensure IAM policies does not allow data exfiltration",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_289",
+      "name": "Ensure IAM policies does not allow permissions management / resource exposure without constraints",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_290",
+      "name": "Ensure IAM policies does not allow write access without constraints",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_355",
+      "name": "Ensure no IAM policies documents allow \"*\" as a statement's resource for restrictable actions",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_62",
+      "name": "Ensure IAM policies that allow full \"*-*\" administrative privileges are not created",
+      "cat": [
+        "IAM"
+      ]
+    },
+    {
+      "id": "CKV_AWS_63",
+      "name": "Ensure no IAM policies documents allow \"*\" as a statement's actions",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "aws_subnet": [
+    {
+      "id": "CKV_AWS_130",
+      "name": "Ensure VPC subnets do not assign public IP by default",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_timestreamwrite_database": [
+    {
+      "id": "CKV_AWS_160",
+      "name": "Ensure that Timestream database is encrypted with KMS CMK",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "aws_transfer_server": [
+    {
+      "id": "CKV_AWS_164",
+      "name": "Ensure Transfer Server is not exposed publicly.",
+      "cat": [
+        "GENERAL_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_357",
+      "name": "Ensure Transfer Server allows only secure protocols",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_380",
+      "name": "Ensure AWS Transfer Server uses latest Security Policy",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_volume_attachment": [
+    {
+      "id": "CKV2_AWS_2",
+      "name": "Ensure that only encrypted EBS volumes are attached to EC2 instances",
+      "cat": [
+        "ENCRYPTION"
+      ],
+      "connected_types": [
+        "aws_ebs_volume"
+      ]
+    }
+  ],
+  "aws_vpc_endpoint_service": [
+    {
+      "id": "CKV_AWS_123",
+      "name": "Ensure that VPC Endpoint Service is configured for Manual Acceptance",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_vpc_security_group_egress_rule": [
+    {
+      "id": "CKV_AWS_23",
+      "name": "Ensure every security group and rule has a description",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_382",
+      "name": "Ensure no security groups allow egress from 0.0.0.0:0 to port -1",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_vpc_security_group_ingress_rule": [
+    {
+      "id": "CKV_AWS_23",
+      "name": "Ensure every security group and rule has a description",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_24",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 22",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_25",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 3389",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_260",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 80",
+      "cat": [
+        "NETWORKING"
+      ]
+    },
+    {
+      "id": "CKV_AWS_277",
+      "name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port -1",
+      "cat": [
+        "NETWORKING"
+      ]
+    }
+  ],
+  "aws_waf_rule_group": [
+    {
+      "id": "CKV_AWS_342",
+      "name": "Ensure WAF rule has any actions",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ]
+    }
+  ],
+  "aws_waf_web_acl": [
+    {
+      "id": "CKV_AWS_175",
+      "name": "Ensure WAF has associated rules",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_342",
+      "name": "Ensure WAF rule has any actions",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ]
+    }
+  ],
+  "aws_wafregional_rule_group": [
+    {
+      "id": "CKV_AWS_342",
+      "name": "Ensure WAF rule has any actions",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ]
+    }
+  ],
+  "aws_wafregional_web_acl": [
+    {
+      "id": "CKV_AWS_175",
+      "name": "Ensure WAF has associated rules",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_342",
+      "name": "Ensure WAF rule has any actions",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ]
+    }
+  ],
+  "aws_wafv2_rule_group": [
+    {
+      "id": "CKV_AWS_342",
+      "name": "Ensure WAF rule has any actions",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ]
+    }
+  ],
+  "aws_wafv2_web_acl": [
+    {
+      "id": "CKV2_AWS_76",
+      "name": "Ensure AWS ALB attached WAFv2 WebACL is configured with AMR for Log4j Vulnerability",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_wafv2_web_acl_association"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_77",
+      "name": "Ensure AWS API Gateway Rest API attached WAFv2 WebACL is configured with AMR for Log4j Vulnerability",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_wafv2_web_acl_association"
+      ]
+    },
+    {
+      "id": "CKV2_AWS_78",
+      "name": "Ensure AWS AppSync attached WAFv2 WebACL is configured with AMR for Log4j Vulnerability",
+      "cat": [
+        "NETWORKING"
+      ],
+      "connected_types": [
+        "aws_wafv2_web_acl_association"
+      ]
+    },
+    {
+      "id": "CKV_AWS_175",
+      "name": "Ensure WAF has associated rules",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_192",
+      "name": "Ensure WAF prevents message lookup in Log4j2. See CVE-2021-44228 aka log4jshell",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ]
+    },
+    {
+      "id": "CKV_AWS_342",
+      "name": "Ensure WAF rule has any actions",
+      "cat": [
+        "APPLICATION_SECURITY"
+      ]
+    }
+  ],
+  "aws_workspaces_workspace": [
+    {
+      "id": "CKV_AWS_155",
+      "name": "Ensure that Workspace user volumes are encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    },
+    {
+      "id": "CKV_AWS_156",
+      "name": "Ensure that Workspace root volumes are encrypted",
+      "cat": [
+        "ENCRYPTION"
+      ]
+    }
+  ],
+  "data.aws_iam_policy": [
+    {
+      "id": "CKV2_AWS_56",
+      "name": "Ensure AWS Managed IAMFullAccess IAM policy is not used.",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ],
+  "data.aws_iam_policy_document": [
+    {
+      "id": "CKV2_AWS_40",
+      "name": "Ensure AWS IAM policy does not allow full IAM privileges",
+      "cat": [
+        "IAM"
+      ]
+    }
+  ]
+}

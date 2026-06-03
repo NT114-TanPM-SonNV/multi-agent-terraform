@@ -8,6 +8,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 from dotenv import load_dotenv
+from langchain_core.language_models import BaseChatModel
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 load_dotenv()
@@ -16,104 +17,82 @@ _TIMEOUT     = int(os.environ.get("LLM_TIMEOUT",      "120"))
 _RETRIES     = int(os.environ.get("LLM_RETRIES",      "3"))
 _MAX_TOKENS  = int(os.environ.get("LLM_MAX_TOKENS",   "4096"))
 _TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE","0"))
-_PARSE_RETRIES = int(os.environ.get("AGENT_PARSE_RETRIES", "2"))
 
-_PROVIDER = os.environ.get("LLM_PROVIDER", "nvidia").lower()
+# Per-agent max_tokens — override LLM_MAX_TOKENS cho từng agent
+MAX_TOKENS_PER_AGENT = {
+    "architecture": int(os.environ.get("LLM_MAX_TOKENS_ARCHI", "2048")),
+    # Defaults = 2048 cho các agent xuất JSON (secu/val/deploy): nếu thiếu env var,
+    # 512/256 cũ âm thầm truncate JSON → parse fail → mất security/misclassify (im lặng).
+    # .env vẫn override; đây chỉ là safety net chống silent-truncation khi env thiếu.
+    "security":     int(os.environ.get("LLM_MAX_TOKENS_SECU",  "2048")),
+    "engineering":  int(os.environ.get("LLM_MAX_TOKENS_ENGI",  "4096")),
+    "validation":   int(os.environ.get("LLM_MAX_TOKENS_VAL",   "2048")),
+    "deployment":   int(os.environ.get("LLM_MAX_TOKENS_DEPLOY","2048")),
+}
 
-if _PROVIDER == "deepseek":
-    from langchain_openai import ChatOpenAI
-    _MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-    llm = ChatOpenAI(
-        model=_MODEL,
-        max_tokens=_MAX_TOKENS,
-        temperature=_TEMPERATURE,
-        api_key=os.environ.get("DEEPSEEK_API_KEY"),
-        base_url="https://api.deepseek.com/v1",
-    )
-else:
-    from langchain_nvidia_ai_endpoints import ChatNVIDIA
-    _MODEL = os.environ.get("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")
-    llm = ChatNVIDIA(model=_MODEL, max_tokens=_MAX_TOKENS, temperature=_TEMPERATURE)
+# Default provider = deepseek (model thực tế dùng để báo cáo metrics). NVIDIA/llama
+# vẫn hỗ trợ qua LLM_PROVIDER=nvidia nhưng không còn là mặc định.
+_PROVIDER = os.environ.get("LLM_PROVIDER", "deepseek").lower()
 
-# Thread pool dùng chung để enforce timeout — tránh tạo mới mỗi lần gọi.
-# atexit shutdown tránh thread leak khi process exit (vd: long-running benchmark).
-_executor = ThreadPoolExecutor(max_workers=4)
+
+def _make_llm(max_tokens: int) -> BaseChatModel:
+    if _PROVIDER == "deepseek":
+        from langchain_openai import ChatOpenAI
+        _MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+        return ChatOpenAI(
+            model=_MODEL,
+            max_tokens=max_tokens,
+            temperature=_TEMPERATURE,
+            api_key=os.environ.get("DEEPSEEK_API_KEY"),
+            base_url="https://api.deepseek.com/v1",
+        )
+    else:
+        from langchain_nvidia_ai_endpoints import ChatNVIDIA
+        _MODEL = os.environ.get("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")
+        return ChatNVIDIA(model=_MODEL, max_tokens=max_tokens, temperature=_TEMPERATURE)
+
+
+# Tạo 1 instance per agent — tái dùng cho mọi lần gọi
+_llm_registry: dict[str, BaseChatModel] = {
+    agent: _make_llm(tokens)
+    for agent, tokens in MAX_TOKENS_PER_AGENT.items()
+}
+# Fallback cho các agent không có trong registry
+llm = _make_llm(_MAX_TOKENS)
+
+# Thread pool dùng chung để enforce timeout
+_executor = ThreadPoolExecutor(max_workers=12)
 atexit.register(_executor.shutdown, wait=False)
 
 
-@retry(
-    stop=stop_after_attempt(_RETRIES),
-    wait=wait_exponential(multiplier=1, min=4, max=60),
-    reraise=True,
-)
-def call_llm(messages: list) -> str:
-    """Gọi LLM với timeout cứng và tự động retry khi gặp lỗi 429 hoặc 5xx.
-
-    Dùng ThreadPoolExecutor để enforce timeout vì ChatNVIDIA không hỗ trợ
-    timeout trực tiếp — future.result(timeout=N) hủy chờ sau N giây.
-    """
-    future = _executor.submit(llm.invoke, messages)
+def _call_llm_with_model(model: BaseChatModel, messages: list) -> str:
+    future = _executor.submit(model.invoke, messages)
     try:
         return future.result(timeout=_TIMEOUT).content
     except FuturesTimeoutError:
         raise TimeoutError(f"LLM call timed out after {_TIMEOUT}s")
 
 
+_RAW_DEBUG = os.environ.get("LLM_RAW", "").lower() in ("1", "true")
+
+
 @retry(
     stop=stop_after_attempt(_RETRIES),
-    wait=wait_exponential(multiplier=1, min=4, max=60),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
     reraise=True,
 )
-def call_llm_raw(bound_llm, messages: list):
-    """Gọi LLM bound với tools, trả AIMessage (không chuyển thành string).
+def call_llm(messages: list, agent: str | None = None) -> str:
+    """Gọi LLM với timeout cứng và tự động retry.
 
-    Dùng cho agent có tool loop — response.tool_calls chứa danh sách tool calls.
-    bound_llm thường là llm.bind_tools(_TOOLS).
+    agent: tên agent ("architecture", "security", "engineering", "validation", "deployment")
+           — dùng để chọn max_tokens phù hợp. None → dùng LLM_MAX_TOKENS mặc định.
+
+    Set LLM_RAW=1 để print raw response ra stdout (debug).
     """
-    future = _executor.submit(bound_llm.invoke, messages)
-    try:
-        return future.result(timeout=_TIMEOUT)
-    except FuturesTimeoutError:
-        raise TimeoutError(f"LLM call timed out after {_TIMEOUT}s")
+    model = _llm_registry.get(agent, llm) if agent else llm
+    raw = _call_llm_with_model(model, messages)
+    if _RAW_DEBUG:
+        print(f"\n{'─'*60}\n[LLM RAW — {agent or 'default'}]\n{raw}\n{'─'*60}\n")
+    return raw
 
 
-def call_llm_with_parse_retry(
-    messages: list,
-    parse_fn,  # hàm parse: parse_fn(raw_text) → dict hoặc raise
-) -> tuple[str, dict]:
-    """Gọi LLM + retry parse nếu fail.
-
-    Trả về (raw_response, parsed_dict). Nếu parse fail ở lần cuối, raise exception.
-    Dùng bởi agent nodes để retry LLM+parse và recover từ JSON truncation.
-
-    Args:
-        messages: LangChain message list
-        parse_fn: callable(raw_text) → dict, raise nếu parse fail
-
-    Returns:
-        (raw_response: str, parsed_dict: dict)
-
-    Raises:
-        TimeoutError: LLM timeout (không retry parse)
-        ValueError/TypeError/etc: parse error sau AGENT_PARSE_RETRIES lần
-    """
-    last_error = None
-    for attempt in range(1, _PARSE_RETRIES + 1):
-        try:
-            raw = call_llm(messages)
-            parsed = parse_fn(raw)
-            return (raw, parsed)
-        except TimeoutError:
-            raise  # TimeoutError không retry — escalate ngay
-        except (ValueError, KeyError, TypeError, AssertionError) as e:
-            last_error = e
-            if attempt < _PARSE_RETRIES:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Parse error attempt %d/%d: %s, retrying...",
-                    attempt, _PARSE_RETRIES, e
-                )
-                continue
-            raise  # Cuối cùng, raise
-    if last_error:
-        raise last_error

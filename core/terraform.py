@@ -3,17 +3,17 @@
 _TF_ENV đảm bảo mọi subprocess đều dùng plugin cache — tránh download
 provider hàng trăm lần khi chạy benchmark.
 """
+import io
+import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import time
-import urllib.error
-import urllib.request
+import zipfile
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Set
-
 # Cache provider giữa các lần gọi terraform — đặt ngoài thư mục tmp
 # để tồn tại xuyên suốt toàn bộ benchmark
 _TF_CACHE_DIR = Path(__file__).parent.parent / ".tf_plugin_cache"
@@ -28,28 +28,187 @@ _TF_ENV = {
     "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE": "true",
 }
 
-_REQUIRED_TOOLS = ("checkov", "terraform", "opa")
-
-
-def substitute_endpoint(hcl: str, endpoint: str) -> str:
-    """Thay localhost:4566 trong provider block bằng floci_endpoint thực.
-
-    Cần thiết khi floci_endpoint khác http://localhost:4566 (vd: port khác,
-    remote host). Không thay nếu endpoint rỗng.
-    """
-    if not endpoint:
-        return hcl
-    return re.sub(r"https?://(?:localhost|127\.0\.0\.1):4566", endpoint.rstrip("/"), hcl)
+# Công cụ bắt buộc cho PIPELINE (generate→validate→deploy). `opa` KHÔNG ở đây vì
+# pipeline không dùng OPA — nó chỉ cần cho semantic eval (core/rego_eval.py),
+# nơi tự kiểm tra opa riêng.
+_REQUIRED_TOOLS = ("checkov", "terraform")
 
 
 def check_required_tools() -> None:
-    """Kiểm tra các công cụ bắt buộc có trong PATH không.
+    """Kiểm tra các công cụ bắt buộc cho pipeline có trong PATH không.
 
     Gọi một lần lúc startup để fail fast thay vì crash giữa benchmark.
     """
     missing = [t for t in _REQUIRED_TOOLS if not shutil.which(t)]
     if missing:
         raise RuntimeError(f"Công cụ chưa được cài: {', '.join(missing)}")
+
+
+_STUBS_DIR = Path(__file__).parent / "stubs"
+
+# Các pattern HCL có thể reference file local — capture group 1 là path
+_LOCAL_FILE_PATTERNS = re.compile(
+    r'(?:'
+    r'filename\s*=\s*"([^"]+)"'                  # filename = "..."
+    r'|source_file\s*=\s*"([^"]+)"'              # source_file = "..."
+    r'|source_dir\s*=\s*"([^"]+)"'               # source_dir = "..." (archive_file dir)
+    r'|source\s*=\s*"(\.{1,2}/[^"]+)"'           # source = "./..." or "../..." (local only)
+    r'|(?:template|config)file?\s*=\s*"([^"]+)"' # template/config = "..."
+    r'|file\s*\(\s*"([^"]+)"\s*\)'               # file("...")
+    r'|templatefile\s*\(\s*"([^"]+)"'            # templatefile("...", ...)
+    r')'
+)
+
+_STUB_CONTENT: dict[str, bytes | str] = {
+    ".zip": None,   # generated dynamically
+    ".py":  "def handler(event, context):\n    return {'statusCode': 200}\n",
+    ".js":  "exports.handler = async (event) => ({ statusCode: 200 });\n",
+    ".sh":  "#!/bin/bash\necho stub\n",
+    ".json": "{}\n",
+    ".yaml": "",
+    ".yml":  "",
+    ".env":  "",
+    ".conf": "",
+    ".tpl":  "",
+    ".txt":  "",
+    ".pem":  "",
+    ".pdf":  b"%PDF-1.4 stub",
+    ".csv":  "",
+    ".xml":  "",
+    ".html": "",
+    ".htm":  "",
+}
+
+_STUB_ZIP_HANDLER = (
+    "def handler(event, context):\n"
+    "    return {'statusCode': 200, 'body': 'stub'}\n"
+)
+
+
+def _make_stub_zip() -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("handler.py", _STUB_ZIP_HANDLER)
+    return buf.getvalue()
+
+
+def _create_stub_file(path: Path, stub_zip: bytes) -> bytes | None:
+    """Tạo stub file phù hợp với extension. Trả về stub_zip bytes nếu vừa tạo."""
+    ext = path.suffix.lower()
+    if ext not in _STUB_CONTENT and ext not in (".zip",):
+        return stub_zip  # extension không biết — bỏ qua
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if ext == ".zip":
+        if stub_zip is None:
+            stub_zip = _make_stub_zip()
+        path.write_bytes(stub_zip)
+    else:
+        content = _STUB_CONTENT.get(ext, "")
+        if isinstance(content, bytes):
+            path.write_bytes(content)
+        else:
+            path.write_text(content, encoding="utf-8")
+    return stub_zip
+
+
+def write_terraform_dir(tmpdir: str | Path, code: str,
+                        files_dir: str | Path | None = None) -> None:
+    """Write main.tf + copy stubs + create stub files for any local path reference.
+
+    Scan HCL cho tất cả pattern reference file local (filename, source_file,
+    file(), templatefile(), v.v.). Nếu file chưa tồn tại → tạo stub phù hợp
+    theo extension để terraform validate/plan/apply không fail vì thiếu file.
+
+    files_dir: thư mục cache chung giữa các agent trong cùng 1 run.
+               Lần đầu tạo stub → copy vào files_dir.
+               Lần sau → copy từ files_dir thay vì tạo lại.
+    """
+    d = Path(tmpdir)
+    (d / "main.tf").write_text(code, encoding="utf-8")
+    if _STUBS_DIR.exists():
+        for stub in _STUBS_DIR.iterdir():
+            if stub.is_file():
+                shutil.copy2(stub, d / stub.name)
+
+    fd = Path(files_dir) if files_dir else None
+    if fd:
+        fd.mkdir(parents=True, exist_ok=True)
+
+    stub_zip: bytes | None = None
+    seen: set[str] = set()
+    for m in _LOCAL_FILE_PATTERNS.finditer(code):
+        raw = next(g for g in m.groups() if g)  # lấy group đầu tiên không None
+        if raw in seen or raw.startswith("${") or raw.startswith("http"):
+            continue  # bỏ qua Terraform interpolation và URL
+        seen.add(raw)
+        file_path = d / raw
+        if file_path.exists():
+            continue
+        # Copy từ cache nếu đã tạo trước đó (vd: A4 đã tạo, A5 copy lại)
+        if fd:
+            cached = fd / raw
+            if cached.exists():
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                if cached.is_dir():
+                    if not file_path.exists():
+                        shutil.copytree(cached, file_path)
+                else:
+                    shutil.copy2(cached, file_path)
+                continue
+        # Tạo stub mới
+        if not file_path.suffix:
+            # path không có extension → là directory (vd: source_dir = "./lambda")
+            file_path.mkdir(parents=True, exist_ok=True)
+            stub_entry = file_path / "index.js"
+            stub_entry.write_text(
+                "exports.handler = async (event) => ({ statusCode: 200 });\n",
+                encoding="utf-8",
+            )
+            if fd:
+                cached = fd / raw
+                cached.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(stub_entry, cached / "index.js")
+            continue
+        stub_zip = _create_stub_file(file_path, stub_zip)
+        # Lưu vào cache để agent tiếp theo dùng lại
+        if fd and file_path.exists():
+            cached = fd / raw
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(file_path, cached)
+
+
+@contextmanager
+def terraform_workdir(run_dir: str | Path | None, subdir: str):
+    """Context manager trả về thư mục làm việc cho terraform.
+
+    Nếu run_dir được cung cấp: dùng run_dir/subdir (persistent, không xóa khi exit).
+    Nếu không: tạo tempdir tạm thời (xóa khi exit).
+
+    Luôn xóa .terraform/ và .terraform.lock.hcl trước khi yield — đảm bảo terraform init
+    chạy fresh, tránh lock file từ run trước conflict với version constraint mới.
+    Plugin cache (_TF_CACHE_DIR) vẫn giữ nguyên nên init không cần re-download.
+    """
+    if run_dir:
+        d = Path(run_dir) / subdir
+        d.mkdir(parents=True, exist_ok=True)
+    else:
+        d = None
+
+    def _clean(p: Path) -> None:
+        lock = p / ".terraform.lock.hcl"
+        dot_tf = p / ".terraform"
+        if lock.exists():
+            lock.unlink()
+        if dot_tf.exists():
+            import shutil as _shutil
+            _shutil.rmtree(dot_tf, ignore_errors=True)
+
+    if d:
+        _clean(d)
+        yield d
+    else:
+        with tempfile.TemporaryDirectory(prefix=f"tf_{subdir}_") as tmp:
+            yield Path(tmp)
 
 
 def run_terraform(cmd: list[str], cwd: str | Path, timeout: int) -> subprocess.CompletedProcess:
@@ -84,198 +243,114 @@ def run_terraform(cmd: list[str], cwd: str | Path, timeout: int) -> subprocess.C
         raise
 
 
-# ── Floci (LocalStack) support ────────────────────────────────────────────────
 
-# Các Terraform resource type mà Floci community hỗ trợ.
-# Dùng bởi graph.py (floci_check_node) để gate trước khi chạy pipeline.
-FLOCI_SUPPORTED: Set[str] = {
-    # S3
-    "aws_s3_bucket", "aws_s3_object", "aws_s3_bucket_object",
-    "aws_s3_bucket_versioning", "aws_s3_bucket_server_side_encryption_configuration",
-    "aws_s3_bucket_public_access_block", "aws_s3_bucket_policy",
-    "aws_s3_bucket_acl", "aws_s3_bucket_logging", "aws_s3_bucket_metric",
-    "aws_s3_bucket_notification", "aws_s3_bucket_object_lock_configuration",
-    "aws_s3_bucket_request_payment_configuration", "aws_s3_bucket_inventory",
-    "aws_s3_bucket_cors_configuration", "aws_s3_bucket_website_configuration",
-    "aws_s3_bucket_lifecycle_configuration", "aws_s3_bucket_accelerate_configuration",
-    "aws_s3_bucket_analytics_configuration", "aws_s3_bucket_ownership_controls",
-    "aws_s3_bucket_intelligent_tiering_configuration",
-    # EC2 / VPC / Networking
-    "aws_instance", "aws_security_group", "aws_vpc", "aws_subnet",
-    "aws_internet_gateway", "aws_route_table", "aws_route_table_association",
-    "aws_eip", "aws_nat_gateway", "aws_key_pair", "aws_network_interface",
-    "aws_ami", "aws_launch_template", "aws_placement_group", "aws_ec2_fleet",
-    "aws_egress_only_internet_gateway", "aws_network_acl", "aws_default_network_acl",
-    "aws_vpc_dhcp_options", "aws_vpc_dhcp_options_association",
-    "aws_vpc_peering_connection",
-    "aws_vpc_security_group_egress_rule", "aws_vpc_security_group_ingress_rule",
-    # IAM
-    "aws_iam_role", "aws_iam_policy", "aws_iam_role_policy",
-    "aws_iam_role_policy_attachment", "aws_iam_instance_profile",
-    "aws_iam_policy_document", "aws_iam_user", "aws_iam_group",
-    "aws_iam_group_membership", "aws_iam_group_policy",
-    "aws_iam_group_policy_attachment", "aws_iam_user_ssh_key",
-    "aws_iam_virtual_mfa_device",
-    # RDS
-    "aws_db_instance", "aws_db_subnet_group", "aws_db_parameter_group",
-    "aws_db_snapshot", "aws_db_option_group", "aws_rds_cluster",
-    "aws_rds_cluster_instance", "aws_rds_cluster_parameter_group",
-    "aws_db_proxy", "aws_db_proxy_default_target_group",
-    # DynamoDB
-    "aws_dynamodb_table", "aws_dynamodb_global_table",
-    "aws_dynamodb_contributor_insights", "aws_dynamodb_table_item",
-    "aws_dynamodb_table_replica", "aws_dynamodb_kinesis_streaming_destination",
-    # Lambda
-    "aws_lambda_function", "aws_lambda_permission",
-    "aws_lambda_event_source_mapping", "aws_lambda_function_url",
-    "aws_lambda_invocation", "aws_lambda_alias", "aws_lambda_layer_version",
-    # Messaging / Streaming
-    "aws_sqs_queue", "aws_sqs_queue_policy",
-    "aws_sns_topic", "aws_sns_topic_subscription", "aws_sns_topic_policy",
-    "aws_kinesis_stream", "aws_kinesis_stream_consumer",
-    "aws_kinesis_firehose_delivery_stream",
-    # KMS / Secrets
-    "aws_kms_key", "aws_kms_alias",
-    "aws_secretsmanager_secret", "aws_secretsmanager_secret_version",
-    # CloudWatch / Events
-    "aws_cloudwatch_log_group", "aws_cloudwatch_log_stream",
-    "aws_cloudwatch_log_resource_policy",
-    "aws_cloudwatch_metric_alarm", "aws_cloudwatch_composite_alarm",
-    "aws_cloudwatch_event_rule", "aws_cloudwatch_event_target",
-    "aws_scheduler_schedule",
-    # Route53 / ACM
-    "aws_route53_zone", "aws_route53_record", "aws_route53_health_check",
-    "aws_route53_query_log", "aws_route53_zone_association",
-    "aws_route53_traffic_policy", "aws_route53_traffic_policy_instance",
-    "aws_acm_certificate", "aws_acm_certificate_validation",
-    # Load Balancing / Auto Scaling
-    "aws_lb", "aws_lb_listener", "aws_lb_target_group",
-    "aws_lb_listener_rule", "aws_lb_target_group_attachment", "aws_elb",
-    "aws_autoscaling_group", "aws_launch_configuration",
-    # Containers
-    "aws_ecs_cluster", "aws_ecs_task_definition", "aws_ecs_service",
-    "aws_ecr_repository", "aws_ecr_lifecycle_policy", "aws_ecr_image",
-    "aws_eks_cluster", "aws_eks_node_group", "aws_eks_fargate_profile",
-    "aws_eks_addon", "aws_eks_cluster_auth", "aws_eks_access_entry",
-    "aws_eks_access_policy_association", "aws_eks_identity_provider_config",
-    "aws_eks_pod_identity_association",
-    # ElastiCache / Kafka
-    "aws_elasticache_cluster", "aws_elasticache_replication_group",
-    "aws_elasticache_subnet_group", "aws_elasticache_user",
-    "aws_elasticache_user_group", "aws_elasticache_user_group_association",
-    "aws_msk_cluster", "aws_msk_configuration", "aws_msk_serverless_cluster",
-    "aws_mskconnect_connector", "aws_mskconnect_custom_plugin",
-    # Cognito / API Gateway
-    "aws_cognito_user_pool", "aws_cognito_user_pool_client",
-    "aws_cognito_user_pool_domain",
-    "aws_api_gateway_rest_api", "aws_api_gateway_resource",
-    "aws_api_gateway_method", "aws_api_gateway_integration",
-    "aws_api_gateway_deployment", "aws_api_gateway_stage",
-    "aws_api_gateway_authorizer", "aws_api_gateway_method_response",
-    "aws_api_gateway_integration_response",
-    "aws_apigatewayv2_api", "aws_apigatewayv2_stage",
-    "aws_apigatewayv2_integration", "aws_apigatewayv2_route",
-    # SSM / Step Functions / Misc
-    "aws_ssm_parameter", "aws_ssm_document",
-    "aws_sfn_state_machine",
-    "aws_cloudformation_stack",
-    "aws_codebuild_project",
-    "aws_codedeploy_app", "aws_codedeploy_deployment_group",
-    "aws_backup_vault", "aws_backup_plan", "aws_backup_selection",
-    "aws_glue_catalog_database", "aws_glue_crawler", "aws_glue_job",
-    "aws_athena_workgroup", "aws_athena_database",
-    "aws_elasticsearch_domain", "aws_opensearch_domain",
-    "aws_appconfig_application", "aws_appconfig_environment",
-    "aws_ses_email_identity", "aws_ses_domain_identity",
-    "aws_pipes_pipe",
-    "aws_transfer_server", "aws_transfer_user",
-    "aws_bedrock_model_invocation_logging_configuration",
-    # Terraform built-ins (không cần AWS)
-    "archive_file",
-    "random_string", "random_id", "random_password", "random_uuid", "random_integer",
-    "null_resource",
-    "local_file",
-    # AWS data sources (luôn available)
-    "aws_availability_zones", "aws_region", "aws_caller_identity",
-    "aws_eks_cluster_auth", "aws_partition",
-}
+def _checkov_bin() -> str:
+    b = os.environ.get("CHECKOV_BIN") or shutil.which("checkov")
+    if not b:
+        raise RuntimeError("checkov not found — set CHECKOV_BIN in .env or add to PATH")
+    return b
 
 
-def check_floci_health(endpoint: str, timeout: int = 5) -> bool:
-    """Kiểm tra Floci (LocalStack) đang chạy và reachable."""
-    try:
-        url = endpoint.rstrip("/") + "/_localstack/health"
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
-            return resp.status == 200
-    except (urllib.error.URLError, OSError):
-        return False
+def _parse_checkov_json(stdout: str, elapsed: float = 0.0) -> dict:
+    """Parse Checkov --output json stdout → dict thống nhất.
 
+    Checkov có thể trả single dict hoặc list (nhiều framework).
+    Trường hợp parse fail → raise RuntimeError (caller quyết định fallback).
+    """
+    # Strip ANSI và tìm JSON object/array đầu tiên (banner in ra stderr nhưng đôi khi lẫn)
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", stdout)
+    m = re.search(r"(\{|\[)", clean)
+    if not m:
+        raise RuntimeError("Checkov output không chứa JSON")
+    data = json.loads(clean[m.start():])
 
-_CKV_HEADER = re.compile(r"^Check:\s+(CKV2?_AWS_\d+):")
-_CKV_FAILED_RES = re.compile(r"^\s*FAILED for resource:\s+(\S+)", re.MULTILINE)
+    # Chuẩn hoá thành list để xử lý đồng nhất
+    items = data if isinstance(data, list) else [data]
+
+    passed_ids: set[str] = set()
+    failed_ids: set[str] = set()
+    failed_pairs: list[tuple[str, str]] = []
+    total_passed = total_failed = 0
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        summary = item.get("summary") or {}
+        total_passed += summary.get("passed", 0)
+        total_failed += summary.get("failed", 0)
+        results = item.get("results") or {}
+        for c in results.get("passed_checks", []):
+            cid = c.get("check_id", "")
+            if cid:
+                passed_ids.add(cid)
+        for c in results.get("failed_checks", []):
+            cid = c.get("check_id", "")
+            addr = c.get("resource") or c.get("resource_address") or ""
+            if cid:
+                failed_ids.add(cid)
+                if addr:
+                    failed_pairs.append((addr, cid))
+
+    return {
+        "failed_ckv_ids":      sorted(failed_ids),
+        "passed_ckv_ids":      sorted(passed_ids),
+        "failed_per_resource": failed_pairs,
+        "passed_count":        total_passed,
+        "failed_count":        total_failed,
+        "total_checks":        total_passed + total_failed,
+        "scan_seconds":        elapsed,
+    }
 
 
 def run_checkov_on_hcl(hcl: str, timeout: int = 60,
                        check_ids: list[str] | None = None) -> dict:
-    """Chạy Checkov trên HCL string, trả dict structured.
+    """Chạy Checkov trên HCL string (source scan).
 
-    check_ids: nếu truyền, chỉ chạy các CKV IDs đó (--check flag).
-               None = chạy tất cả rules (dùng cho scan toàn bộ).
+    Dùng cho score.py (full scan không có plan file).
+    A4 dùng run_checkov_on_plan() khi có plan JSON.
 
-    Returns:
-        {
-          "failed_ckv_ids":      sorted list of CKV IDs failed,
-          "failed_per_resource": list of (resource_addr, ckv_id),
-          "passed_count":        int,
-          "failed_count":        int,
-          "total_checks":        int,
-          "scan_seconds":        float,
-        }
+    check_ids: None = scan tất cả (--quiet, chỉ lấy fail).
+               list  = scan tập hạn chế (không --quiet để lấy cả passed).
     """
-    checkov_bin = os.environ.get("CHECKOV_BIN") or shutil.which("checkov")
-    if not checkov_bin:
-        raise RuntimeError("checkov not found — set CHECKOV_BIN in .env or add to PATH")
-
-    cmd = [checkov_bin, "-d", ".", "--framework", "terraform", "--quiet", "--compact"]
+    bin_ = _checkov_bin()
+    cmd = [bin_, "-d", ".", "--framework", "terraform", "--output", "json"]
     if check_ids:
         cmd += ["--check", ",".join(sorted(set(check_ids)))]
+    else:
+        cmd += ["--quiet"]
 
     t0 = time.time()
     with tempfile.TemporaryDirectory(prefix="checkov_") as tmpdir:
         (Path(tmpdir) / "main.tf").write_text(hcl)
         try:
-            proc = subprocess.run(
-                cmd,
-                cwd=tmpdir,
-                capture_output=True, text=True, timeout=timeout,
-            )
+            proc = subprocess.run(cmd, cwd=tmpdir,
+                                  capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             raise RuntimeError(f"Checkov timeout after {timeout}s")
-        out = proc.stdout + "\n" + proc.stderr
+    return _parse_checkov_json(proc.stdout, round(time.time() - t0, 2))
 
-    elapsed = round(time.time() - t0, 2)
 
-    passed = failed = 0
-    m = re.search(r"Passed checks:\s*(\d+),\s*Failed checks:\s*(\d+)", out)
-    if m:
-        passed, failed = int(m.group(1)), int(m.group(2))
+def run_checkov_on_plan(plan_json_str: str, timeout: int = 60,
+                        check_ids: list[str] | None = None) -> dict:
+    """Chạy Checkov trên Terraform plan JSON (terraform show -json output).
 
-    failed_ids: set[str] = set()
-    failed_pairs: list[tuple[str, str]] = []
-    for block in re.split(r"\n(?=Check:\s+CKV)", out):
-        m_id = _CKV_HEADER.match(block)
-        if not m_id:
-            continue
-        ckv_id = m_id.group(1)
-        for m_res in _CKV_FAILED_RES.finditer(block):
-            failed_ids.add(ckv_id)
-            failed_pairs.append((m_res.group(1), ckv_id))
+    Chính xác hơn source scan: resolved computed values, for_each expansion,
+    graph checks dùng connection graph đầy đủ từ plan.
+    Fallback: nếu terraform_plan framework trả rỗng (check không support),
+    caller nên gọi lại run_checkov_on_hcl.
+    """
+    bin_ = _checkov_bin()
+    cmd = [bin_, "-f", "plan.json", "--framework", "terraform_plan",
+           "--output", "json"]
+    if check_ids:
+        cmd += ["--check", ",".join(sorted(set(check_ids)))]
 
-    return {
-        "failed_ckv_ids":      sorted(failed_ids),
-        "failed_per_resource": failed_pairs,
-        "passed_count":        passed,
-        "failed_count":        failed,
-        "total_checks":        passed + failed,
-        "scan_seconds":        elapsed,
-    }
+    t0 = time.time()
+    with tempfile.TemporaryDirectory(prefix="checkov_plan_") as tmpdir:
+        (Path(tmpdir) / "plan.json").write_text(plan_json_str)
+        try:
+            proc = subprocess.run(cmd, cwd=tmpdir,
+                                  capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Checkov plan scan timeout after {timeout}s")
+    return _parse_checkov_json(proc.stdout, round(time.time() - t0, 2))

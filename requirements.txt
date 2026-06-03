@@ -1,0 +1,21 @@
+# Extracted from pyproject.toml - Windows compatible
+
+# Dataset
+datasets>=4.8.5
+pyyaml>=6.0.3
+
+# Multi-agent framework
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-nvidia-ai-endpoints>=0.3.0
+
+# Reliability
+tenacity>=8.0.0
+filelock>=3.0.0
+python-dotenv>=1.0.0
+json-repair>=0.30.0
+langchain-openai>=1.2.2
+
+# Tools
+checkov>=3.2.529
+code-bert-score>=0.4.1

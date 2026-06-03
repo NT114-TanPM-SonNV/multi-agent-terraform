@@ -1,7 +1,0 @@
-services:
-  floci-1:
-    image: floci/floci:latest
-    ports:
-      - "4566:4566"
-    volumes:
-      - ./data-1:/app/data

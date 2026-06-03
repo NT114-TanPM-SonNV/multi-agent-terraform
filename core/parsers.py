@@ -13,8 +13,8 @@ def strip_code_block(raw: str) -> str:
     Xử lý các dạng: ```json ... ```, ```hcl ... ```, ``` ... ```
     """
     raw = raw.strip()
-    # Khớp ```<lang>\n...\n``` hoặc ```\n...\n```
-    match = re.fullmatch(r"```(?:\w+)?\n?(.*?)```", raw, re.DOTALL)
+    # Dùng search thay fullmatch để handle trường hợp LLM có text trước/sau fence
+    match = re.search(r"```(?:\w+)?\n(.*?)\n?```", raw, re.DOTALL)
     if match:
         return match.group(1).strip()
     return raw

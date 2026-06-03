@@ -10,17 +10,21 @@ __pycache__/
 .env.*
 !.env.example
 
-# Claude Code
+# Claude Code / OpenWolf (internal tooling, không commit)
+CLAUDE.md
 .claude/
-
-# OpenWolf
 .wolf/
 
-# Reference / local research
+# Reference / local research / analysis docs (không commit)
 ref/
+docs/
 
 # Temporary outputs
 tmp/
+logs/
+
+# Runtime output files (evaluate --out, trace --out, benchmark timing)
+time-*.json
 
 # Virtual environments
 .venv/

@@ -1,14 +1,32 @@
-"""Engineering Agent — Agent 3 trong pipeline.
+"""Agent 3 — Engineering / Code Generation (engineering_node)
 
-Nhận infrastructure_plan + security_constraints, sinh Terraform HCL hoàn chỉnh.
-Security constraints từ Agent 2 được merge trực tiếp vào resource blocks tương ứng.
+Sinh Terraform HCL từ infrastructure_plan (A1) + security_profile (A2).
+Serialize resource declarations theo AWS provider ~> 5.0 schema, sau đó implement
+các security checks (CKV IDs) mà A2 đã chọn cho từng resource.
+Có thể nhận fix_instruction từ A4 SYNTAX/LOGIC/SECURITY hoặc A5 LOGIC để incremental patch.
 
-Khối `terraform {}` + `provider "aws" {}` (với Floci endpoints) là FILE TĨNH
-core/provider.tf — Agent 3 chỉ prepend nguyên trạng, KHÔNG để LLM sinh. URL dùng
-localhost:4566; dataset/evaluator._substitute_endpoint() tự thay bằng FLOCI_ENDPOINT
-thật lúc eval, nên không cần inject endpoint động ở đây.
+Workflow:
+  1. Build security context từ A2 (CKV IDs kèm tên check)
+  2. Build LLM context (plan JSON + security context)
+  3. Inject fix_instruction nếu là engineering fix (incremental patch)
+  4. Call LLM sinh HCL
+  5. Clean output (strip tags + preamble + code block)
+  6. Validate có ít nhất 1 resource block (retry 1 lần nếu không)
+  7. Return generated HCL hoặc error
 
-Output: generated_code (chuỗi HCL) ghi vào LangGraph State.
+Input: state["infrastructure_plan"], state["security_profile"], optional state["fix_feedback"]
+Output: state["generated_code"] (HCL string) hoặc error
+
+Retry logic:
+  - retries["eng"] max 3 (từ A4 SYNTAX/LOGIC/SECURITY + A5 LOGIC)
+  - Khi hết budget → requires_human
+  - Oscillation prevention: eng_error_history giữ 2 fix gần nhất để LLM không lặp lỗi cũ
+
+Incremental patching (khi nhận fix_instruction từ A4/A5):
+  - Gửi HCL code cũ + fix yêu cầu → LLM patch minimal (không rewrite từ đầu)
+  - Lý do: rewrite từ plan có thể mất các edit A3 đã làm ở lần trước (provider block,
+    security companion resources, etc.)
+  - Điều kiện: root_cause PHẢI là "engineering" — nếu là "architecture" thì fix cho A1, không A3
 """
 import json
 import logging
@@ -17,184 +35,174 @@ from pathlib import Path
 
 from core.state import AgentState
 from core.llm import call_llm
-from core.errors import make_infra_error
+from core.errors import make_fail
 from core.parsers import strip_code_block
-from prompts.engineering import SYSTEM_PROMPT as _SYSTEM_PROMPT
-from prompts.engineering import TOP_PROMPT as _TOP, BOTTOM_PROMPT as _BOTTOM
+from prompts.engineering import SYSTEM_PROMPT as _SYSTEM_PROMPT, USER_TEMPLATE as _USER_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
-# Strip CoT reasoning block mà LLM sinh trước HCL (giống Agent 2).
+_CATALOG_FILE = Path(__file__).parent.parent / "core" / "catalog.json"
+
+
+def _load_check_names() -> dict[str, str]:
+    try:
+        data = json.loads(_CATALOG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    names: dict[str, str] = {}
+    for checks in data.values():
+        for c in checks:
+            cid = c.get("id", "")
+            if cid and cid not in names:
+                names[cid] = c.get("name", "")
+    return names
+
+
+_CKV_NAME: dict[str, str] = _load_check_names()
+
+# Xóa <plan>...</plan> tags từ LLM output.
+# Reasoning model (deepseek-v4-pro) đôi khi wrap chain-of-thought trong <plan> tags
+# trước khi trả HCL — những tags này không phải HCL hợp lệ, phải strip ra.
 _PLAN_TAG = re.compile(r"<plan>.*?</plan>", re.DOTALL | re.IGNORECASE)
 
-# Provider block tĩnh — endpoints đã verify bằng terraform validate (xem core/provider.tf).
-_PROVIDER_BLOCK = (Path(__file__).parent.parent / "core" / "provider.tf").read_text(encoding="utf-8").strip()
-
-# Khớp khối top-level `terraform {` hoặc `provider "..." {` mà LLM có thể lỡ sinh.
-_BLOCK_HEADER = re.compile(r'(?m)^[ \t]*(terraform|provider)\b[^\n{]*\{')
-
+# Pattern match tên resource trong HCL: `resource "aws_s3_bucket" "main"`
+# Group 1 = type, Group 2 = name — dùng để log và đếm resource count.
 _RESOURCE_DECL_RE = re.compile(r'resource\s+"([^"]+)"\s+"([^"]+)"')
-_ATTR_RE = re.compile(r'^\s*(\w+)\s*=\s*(.+)', re.MULTILINE)
+
+# Các keyword bắt đầu một block HCL hợp lệ.
+# Dùng để tìm điểm đầu tiên cần giữ trong output LLM (strip preamble text trước đó).
+_HCL_BLOCK_START = re.compile(r'(?:terraform\s*\{|provider\s+"|resource\s+"|data\s+"|variable\s+"|output\s+"|module\s+")')
 
 
-def _strip_injected_blocks(hcl: str) -> str:
-    """Xóa mọi khối terraform{} / provider{} do LLM sinh để tránh trùng lặp.
+def _strip_preamble(hcl: str) -> str:
+    """Bỏ phần văn bản LLM viết trước block HCL đầu tiên.
 
-    Code tự prepend provider block riêng; nếu LLM cũng sinh thì terraform validate
-    sẽ fail vì duplicate provider/required_providers. Dùng đếm ngoặc để xóa đúng
-    phạm vi khối, không dùng regex một lần (block lồng có ngoặc bên trong).
+    LLM thường viết intro như "Here's the Terraform configuration:" trước block code.
+    Những text này không phải HCL → terraform validate sẽ fail.
+
+    Ví dụ:
+      Input:  "Sure! Here's the config:\n\nresource \"aws_s3_bucket\" \"main\" { ... }"
+      Output: "resource \"aws_s3_bucket\" \"main\" { ... }"
     """
-    while True:
-        m = _BLOCK_HEADER.search(hcl)
-        if not m:
-            return hcl
-        # Vị trí dấu { mở khối (ký tự cuối của match)
-        open_idx = m.end() - 1
-        depth = 0
-        end_idx = None
-        for i in range(open_idx, len(hcl)):
-            if hcl[i] == "{":
-                depth += 1
-            elif hcl[i] == "}":
-                depth -= 1
-                if depth == 0:
-                    end_idx = i + 1
-                    break
-        if end_idx is None:
-            # Khối không đóng (HCL hỏng) — xóa từ header tới hết để guard bắt empty
-            return hcl[: m.start()].strip()
-        hcl = (hcl[: m.start()] + hcl[end_idx:]).strip()
+    m = _HCL_BLOCK_START.search(hcl)
+    return hcl[m.start():] if m else hcl
 
 
-def _code_signature(hcl: str) -> frozenset:
-    """Normalized signature: resource declarations + attribute assignments.
+def _clean_hcl(raw: str) -> str:
+    """Clean LLM output thành HCL thuần.
 
-    Bắt được cả thay đổi cấu trúc (thêm/bớt resource) lẫn thay đổi attribute
-    (encrypted = false → encrypted = true) do fix_instruction yêu cầu.
+    3 bước theo thứ tự:
+      1. Xóa <plan>...</plan> tags (reasoning model chain-of-thought)
+      2. Xóa ```hcl...``` markdown fence
+      3. Xóa text giải thích trước block HCL đầu tiên
     """
-    sig = set()
-    for m in _RESOURCE_DECL_RE.finditer(hcl):
-        sig.add(("res", m.group(1), m.group(2)))
-    for m in _ATTR_RE.finditer(hcl):
-        key = m.group(1).strip()
-        val = m.group(2).strip().rstrip(",").strip('"')
-        sig.add(("attr", key, val))
-    return frozenset(sig)
-
-
-def _code_unchanged(old: str, new: str) -> bool:
-    """Kiểm tra LLM có thực sự thay đổi code sau fix_instruction không."""
-    if not old:
-        return False
-    return _code_signature(old) == _code_signature(new)
+    cleaned = _PLAN_TAG.sub("", raw).strip()
+    return _strip_preamble(strip_code_block(cleaned).strip())
 
 
 def engineering_node(state: AgentState) -> dict:
-    """LangGraph node function cho Engineering Agent.
+    """LangGraph node — serialize A1 plan sang HCL, implement security checks từ A2.
 
-    Đọc plan + constraints (+ fix_instruction nếu retry), gọi LLM sinh HCL body,
-    strip block provider/terraform thừa, prepend provider block tĩnh.
+    Main steps:
+      1. Build security context từ A2 (CKV IDs + tên check per resource)
+      2. Build LLM context (plan JSON + security context)
+      3. Inject fix_instruction nếu là engineering fix (incremental patch)
+      4. Call LLM sinh HCL
+      5. Clean output (strip tags + preamble + code block)
+      6. Validate có ít nhất 1 resource block (retry 1 lần nếu không)
+      7. Return generated HCL hoặc error
     """
-    plan = state["infrastructure_plan"]
-    if not plan.get("resources"):
-        return make_infra_error(
-            "Engineering agent nhận infrastructure_plan rỗng — Agent 1 phải chạy trước."
-        )
+    # ── Step 1: Build security context từ A2 ─────────────────────────────────
+    # Render "label: - CKV_ID: tên check" để A3 biết cần implement gì.
+    # Tên check lấy từ catalog (ví dụ: "Ensure S3 bucket is encrypted at rest")
+    # giúp A3 hiểu ý nghĩa mà không cần nhớ ID.
+    sec_lines = []
+    for label, info in state["security_profile"].items():
+        checks = info.get("checks", [])
+        if not checks:
+            continue
+        sec_lines.append(f"  {label}:")
+        for cid in checks:
+            name = _CKV_NAME.get(cid, cid)
+            sec_lines.append(f"    - {cid}: {name}")
+    ctx_lines = "\n".join(sec_lines) or "  (no security checks selected)"
 
-    constraints = state.get("security_constraints") or {}
-    _validation = state.get("validation_result") or {}
-    fix = _validation.get("fix_instruction")
-    _root_cause = _validation.get("root_cause")
+    # ── Step 2: Build LLM context ────────────────────────────────────────────
+    # Plan ở dạng JSON vì A3 cần đọc type/name/attributes/blocks để sinh đúng HCL syntax.
+    user_content = _USER_TEMPLATE.format(
+        PLAN=json.dumps(state["infrastructure_plan"], indent=2),
+        SECURITY_CONTEXT=ctx_lines,
+    )
 
-    plan_json = json.dumps(plan, indent=2)
-    constraints_json = json.dumps(constraints, indent=2)
-
-    # Retry prompt chỉ khi fix này thực sự dành cho Engineering Agent
-    if fix and _root_cause == "engineering" and state["eng_retry_count"] > 0:
-        old_code = state.get("generated_code") or "N/A"
-        user_content = (
-            _TOP
-            + f"Infrastructure plan:\n{plan_json}\n\n"
-            + f"Security constraints:\n{constraints_json}\n"
-            + _BOTTOM
-            + f"\n\nPREVIOUS CODE FAILED VALIDATION.\n"
-            + f"Previous code:\n{old_code}\n\n"
-            + f"Fix instruction:\n{fix}\n\n"
-            + "Apply the fix. fix_instruction takes priority over security_constraints if they conflict. "
-            + "Keep correct parts of the previous code unchanged."
-        )
-    else:
-        user_content = (
-            _TOP
-            + f"Infrastructure plan:\n{plan_json}\n\n"
-            + f"Security constraints:\n{constraints_json}\n"
-            + _BOTTOM
-        )
-
+    # ── Step 3: Inject fix_instruction nếu là engineering fix ─────────────────
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": user_content},
+        {"role": "user",   "content": user_content},
     ]
 
+    fix_feedback = state["fix_feedback"]
+    fix_instruction = fix_feedback.get("fix_instruction", "")
+    # Incremental patching: chỉ áp khi fix nhắm tới engineering.
+    # Gate root_cause tránh apply fix dành cho A1 (root_cause="architecture").
+    if fix_instruction and fix_feedback.get("root_cause") == "engineering":
+        fix_msg = (
+            f"Your previous HCL had an error. "
+            f"Make ONLY the fix below — do not change anything else:\n\n"
+            f"FIX:\n{fix_instruction}"
+        )
+        if state["generated_code"]:
+            fix_msg += f"\n\nPREVIOUS CODE (keep everything except the fix):\n{state['generated_code']}"
+        # Gắn 2 lần thử gần nhất để LLM không lặp lại sai lầm cũ.
+        past = [
+            e.get("fix_instruction", "")[:200]
+            for e in state["eng_error_history"][-2:]
+            if e.get("fix_instruction") and e.get("fix_instruction") != fix_instruction
+        ]
+        if past:
+            fix_msg += "\n\nPREVIOUS ERRORS (do NOT reintroduce these):\n" + "\n".join(f"- {p}" for p in past)
+        messages.append({"role": "user", "content": fix_msg})
+
+    # ── Step 4: Call LLM ─────────────────────────────────────────────────────
     raw = ""
     try:
-        raw = call_llm(messages)
+        raw = call_llm(messages, agent="engineering")
     except TimeoutError as e:
         logger.error("Engineering agent timeout: %s", e)
-        return make_infra_error(f"Engineering agent LLM timeout: {e}")
+        return make_fail("INFRASTRUCTURE", None, f"Engineering agent LLM timeout: {e}")
     except Exception as e:
-        logger.error("Engineering agent unexpected error: %s", e)
-        return make_infra_error(f"Engineering agent unexpected error: {e}")
+        logger.error("Engineering agent error: %s", e)
+        return make_fail("INFRASTRUCTURE", None, f"Engineering agent error: {e}")
 
-    body = _strip_injected_blocks(_PLAN_TAG.sub("", strip_code_block(raw)).strip())
-
-    # Guard: phải có ít nhất một resource block — retry một lần nếu thiếu
+    # ── Step 5: Clean + validate có resource block ───────────────────────────
+    body = _clean_hcl(raw)
     if 'resource "' not in body:
-        logger.warning("Engineering agent: không có resource block — retry với explicit note")
+        logger.warning("Engineering agent: không có resource block — retry")
         retry_msgs = messages + [
             {"role": "assistant", "content": raw},
-            {"role": "user", "content":
-             "Your response did not contain any `resource \"` blocks. "
-             "Please write the complete Terraform HCL with ALL resource blocks "
-             "required by the infrastructure plan. Do not omit any resource."},
+            {"role": "user", "content": (
+                "Your response did not contain any `resource \"` blocks. "
+                "Output the complete Terraform HCL with ALL resource blocks "
+                "from the plan. Do not omit any resource."
+            )},
         ]
         try:
-            raw = call_llm(retry_msgs)
-        except TimeoutError as e:
-            logger.error("Engineering agent retry timeout: %s", e)
-            return make_infra_error(f"Engineering agent LLM timeout on retry: {e}")
+            raw = call_llm(retry_msgs, agent="engineering")
         except Exception as e:
-            logger.error("Engineering agent retry error: %s", e)
-            return make_infra_error(f"Engineering agent retry error: {e}")
-        body = _strip_injected_blocks(strip_code_block(_PLAN_TAG.sub("", raw)).strip())
+            return make_fail("INFRASTRUCTURE", None, f"Engineering agent retry error: {e}")
+        body = _clean_hcl(raw)
         if 'resource "' not in body:
-            return make_infra_error(
-                f"Engineering agent không sinh được resource block nào (sau retry). Raw: {raw[:300]}"
+            return make_fail(
+                "SYNTAX", "engineering",
+                f"Engineering agent không sinh được resource block (sau retry). Raw: {raw[:300]}",
             )
 
-    # Retry guard: nếu LLM bỏ qua fix_instruction và trả về code giống hệt,
-    # escalate ngay thay vì để Agent 4 tốn thêm một vòng validate.
-    old_code = state.get("generated_code") or ""
-    if fix and _root_cause == "engineering" and state["eng_retry_count"] > 0 and old_code:
-        old_body = _strip_injected_blocks(strip_code_block(old_code))
-        if _code_unchanged(old_body, body):
-            logger.warning("Engineering agent trả về code giống hệt sau fix_instruction")
-            return make_infra_error(
-                "Engineering agent returned identical HCL after fix instruction. "
-                f"Expected changes based on: {fix}"
-            )
-
-    # Coverage check: log warning cho resource trong plan nhưng vắng mặt trong HCL
-    plan_pairs = {(r["type"], r["name"]) for r in plan.get("resources", [])}
+    generated_code = f"{body}\n"
     gen_pairs = set(_RESOURCE_DECL_RE.findall(body))
-    missing = plan_pairs - gen_pairs
-    if missing:
-        logger.warning(
-            "Engineering agent HCL thiếu %d resource từ plan: %s",
-            len(missing), sorted(missing),
-        )
+    logger.info("Engineering agent: %d chars, %d resources", len(generated_code), len(gen_pairs))
 
-    generated_code = f"{_PROVIDER_BLOCK}\n\n{body}\n"
-
-    logger.info("Engineering agent: %d ký tự HCL", len(generated_code))
-    return {"generated_code": generated_code}
+    # ── Step 6 (cont): Return ─────────────────────────────────────────────────
+    # fix_feedback={}: báo hiệu success cho route_after_engineering.
+    out: dict = {"generated_code": generated_code, "fix_feedback": {}}
+    if fix_instruction and fix_feedback.get("root_cause") == "engineering":
+        out["eng_error_history"] = state["eng_error_history"] + [{"fix_instruction": fix_instruction}]
+    return out

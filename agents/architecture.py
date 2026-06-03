@@ -1,142 +1,156 @@
-"""Architecture Agent — Agent 1 trong pipeline.
+"""Agent 1 — Architecture Planning (architecture_node)
 
-Nhận prompt ngôn ngữ tự nhiên, dùng LLM xác định các AWS resource
-cần thiết và dependency giữa chúng. Không sinh HCL code.
+Sinh kế hoạch infrastructure từ user request. LLM trả JSON chứa resources + data_sources.
+Workflow:
+  1. LLM sinh plan initial (hoặc fix plan nếu A4/A5 route back với fix_instruction)
+  2. Validate structure (defects check) — nếu có → re-prompt LLM tự sửa (giữ intent)
+  3. Trả infrastructure_plan để A2/A3 dùng
 
-Output: infrastructure_plan ghi vào LangGraph State.
+Input: state["prompt"] (user request), optional state["fix_feedback"] (fix instruction từ A4/A5)
+Output: state["infrastructure_plan"] (dict resources + data_sources) hoặc error
+
+Retry logic:
+  - retries["arch"] max 2 (từ A4 MISSING_RESOURCE + A5 MISSING_RESOURCE)
+  - Khi hết budget → requires_human
 """
-import json
 import logging
-import re
 
 from core.state import AgentState
-from core.llm import call_llm_with_parse_retry
-from core.errors import make_infra_error
+from core.llm import call_llm
+from core.errors import make_fail
 from core.parsers import parse_llm_json
-from prompts.architecture_v2 import SYSTEM_PROMPT as _SYSTEM_PROMPT
-from prompts.architecture_v2 import TOP_PROMPT as _TOP, INSTRUCTIONS_PROMPT as _INSTRUCTIONS
+from prompts.architecture import SYSTEM_PROMPT, DEFECT_FIX
 
 logger = logging.getLogger(__name__)
 
-_PLAN_TAG = re.compile(r"<plan>.*?</plan>", re.DOTALL | re.IGNORECASE)
 
+def _parse_plan(raw: str) -> dict:
+    """Parse JSON từ LLM response thành plan dict.
 
-def _strip_plan_tag(text: str) -> str:
-    return _PLAN_TAG.sub("", text).strip()
-
-
-def _parse_arch_response(text: str) -> dict:
-    return parse_llm_json(_strip_plan_tag(text), {
-        "resources": list,
-        "data_sources": list,
-        "dependencies": dict,
-    })
-
-
-def _plan_signature(plan: dict) -> frozenset:
-    """Tính signature của plan để so sánh order-insensitive.
-
-    Dùng frozenset thay vì == trực tiếp vì LLM có thể trả về cùng resources
-    nhưng khác thứ tự — frozenset loại bỏ order, chỉ so sánh nội dung.
-
-    Chỉ so sánh cấu trúc (keys), không so sánh values — đủ để detect
-    trường hợp LLM bỏ qua fix instruction hoàn toàn (thêm/bớt resource,
-    thêm/bớt attr). Value thay đổi nhỏ vẫn cho retry tiếp — chấp nhận được.
+    Chỉ require 'resources' là list. 'data_sources' default [] nếu LLM bỏ qua.
+    setdefault attributes/blocks ở đây vì A2/A3 subscript 2 key này trực tiếp.
     """
-    sig = []
-    for r in plan.get("resources", []):
-        sig.append((
-            "res", r["type"], r["name"],
-            tuple(sorted(r.get("attrs", {}).keys())),
-            tuple(sorted(r.get("refs", {}).keys())),
-        ))
-    for d in plan.get("data_sources", []):
-        sig.append((
-            "ds", d["type"], d["name"],
-            tuple(sorted((d.get("filters") or {}).keys())),
-        ))
-    for src, dests in sorted(plan.get("dependencies", {}).items()):
-        for dst in sorted(set(dests)):
-            sig.append(("dep", src, dst))
-    return frozenset(sig)
+    plan = parse_llm_json(raw, {"resources": list})
+    if not isinstance(plan.get("data_sources"), list):
+        plan["data_sources"] = []
+    for section in ("resources", "data_sources"):
+        for obj in plan.get(section, []):
+            if isinstance(obj, dict):
+                obj.setdefault("attributes", {})
+                obj.setdefault("blocks", {})
+    return plan
 
 
-def _plan_unchanged(old_plan: dict, new_plan: dict) -> bool:
-    """Kiểm tra LLM có thực sự thay đổi plan sau fix instruction không.
+def _plan_defects(plan: dict) -> list[str]:
+    """Phát hiện defect CẤU TRÚC trong plan LLM trả — KHÔNG sửa, chỉ báo.
 
-    Trả về True (unchanged) → pipeline dừng sớm thay vì retry vô ích.
-    Trả về False khi old_plan rỗng (lần chạy đầu, chưa có plan để so sánh).
+    Triết lý: Python KHÔNG được đoán hộ LLM. Nếu LLM trả item thiếu 'name',
+    có 2 khả năng: (a) LLM quên, (b) LLM định đặt tên đặc biệt. Drop âm thầm
+    mất resource → hạ downstream (A2 không có entry, A3 thiếu code, A4 MISSING).
+    → Đúng hơn: trả lỗi cho LLM TỰ sửa (re-prompt in-node), giữ intent.
+
+    5 loại defect được kiểm:
+      0. resources rỗng — LLM không sinh được resource nào
+      1. Item không phải JSON object (LLM trả primitive/string thay vì dict)
+      2. Thiếu 'type' (resource type, vd "aws_s3_bucket")
+      3. Thiếu 'name' (logical name, vd "main")
+      4. Trùng type.name trong cùng section (Terraform không cho phép 2 resource cùng addr)
+
+    Message viết bằng English vì sẽ được đút vào prompt LLM.
     """
-    if not old_plan:
-        return False
-    return _plan_signature(old_plan) == _plan_signature(new_plan)
+    defects: list[str] = []
+    if not plan.get("resources"):
+        defects.append("'resources' is empty — no infrastructure to generate")
+        return defects
+    for section in ("resources", "data_sources"):
+        seen: set[str] = set()
+        for i, obj in enumerate(plan.get(section, [])):
+            if not isinstance(obj, dict):
+                defects.append(f"{section}[{i}] is not a JSON object")
+                continue
+            t, n = obj.get("type"), obj.get("name")
+            if not t or not n:
+                missing = "type" if not t else "name"
+                defects.append(f"{section}[{i}] is missing '{missing}'")
+                continue
+            label = f"{t}.{n}"
+            if label in seen:
+                defects.append(f"{section} declares '{label}' more than once")
+            seen.add(label)
+    return defects
 
 
 def architecture_node(state: AgentState) -> dict:
-    """LangGraph node function cho Architecture Agent.
+    """LangGraph node — generate infrastructure plan from user request.
 
-    Chọn prompt phù hợp (initial hoặc retry), gọi LLM, parse kết quả,
-    kiểm tra retry guard rồi ghi infrastructure_plan vào state.
+    Main steps:
+      1. Build LLM context: user prompt + optional fix_instruction (khi root_cause="architecture")
+      2. Call LLM to generate plan (JSON với resources + data_sources)
+      3. Validate structure — nếu có defect, re-prompt LLM tự sửa (1 lần)
+      4. Return infrastructure_plan hoặc error
     """
-    _validation = state.get("validation_result") or {}
-    fix = _validation.get("fix_instruction")
-    _root_cause = _validation.get("root_cause")
-    old_plan = state.get("infrastructure_plan") or {}
-
-    if fix and _root_cause == "architecture" and state["arch_retry_count"] > 0:
-        old_plan_json = json.dumps(old_plan, indent=2) if old_plan else "N/A"
-        user_content = (
-            _TOP + state["prompt"] + "</request>\n\n"
-            f"PREVIOUS PLAN WAS REJECTED.\n"
-            f"Previous plan:\n{old_plan_json}\n\n"
-            f"Fix instruction:\n{fix}\n\n"
-            "Incorporate the fix — add or modify resources as instructed. Keep valid resources unchanged.\n\n"
-            + _INSTRUCTIONS
-        )
-    else:
-        user_content = _TOP + state["prompt"] + "</request>\n\n" + _INSTRUCTIONS
-
+    # ── Step 1: Build LLM messages ──────────────────────────────────────────────
+    # Fresh start mỗi lần — không inject plan cũ vì plan cũ đã sai.
     messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": user_content},
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user",   "content": state["prompt"]},
     ]
 
-    raw = ""
+    # Inject fix_instruction nếu A4/A5 route ngược về với root_cause="architecture".
+    # Gate root_cause tránh nhận nhầm fix dành cho A3 (root_cause="engineering").
+    fix_feedback = state["fix_feedback"]
+    fix_instruction = fix_feedback.get("fix_instruction", "")
+    if fix_instruction and fix_feedback.get("root_cause") == "architecture":
+        fix_msg = f"REQUIRED CHANGE:\n{fix_instruction}"
+        # Gắn 2 attempt gần nhất vào prompt để LLM không lặp lại sai lầm cũ.
+        past = [e.get("fix_instruction", "")[:400]
+                for e in state["arch_error_history"][-2:]
+                if e.get("fix_instruction") and e.get("fix_instruction") != fix_instruction]
+        if past:
+            fix_msg += "\n\nPREVIOUS ATTEMPTS (do NOT repeat):\n" + "\n".join(f"- {p}" for p in past)
+        messages.append({"role": "user", "content": fix_msg})
+    elif fix_instruction:
+        logger.debug("Archi: fix_instruction ignored (root_cause=%s)", fix_feedback.get("root_cause"))
+
+    # ── Step 2: Call LLM ────────────────────────────────────────────────────────
+    # Lỗi LLM/network/parse → INFRASTRUCTURE → requires_human (không retry vì lỗi hạ tầng).
     try:
-        raw, new_plan = call_llm_with_parse_retry(messages, _parse_arch_response)
-    except TimeoutError as e:
-        logger.error("Architecture agent timeout: %s", e)
-        return make_infra_error(f"Architecture agent LLM timeout: {e}")
-    except (ValueError, KeyError, TypeError) as e:
-        logger.error("Architecture agent parse error after retries: %s | raw: %.300s", e, raw)
-        return make_infra_error(f"Architecture agent LLM parse error (after retries): {e}. Raw: {raw[:300]}")
+        raw = call_llm(messages, agent="architecture")
+        plan = _parse_plan(raw)
     except Exception as e:
-        logger.error("Architecture agent unexpected error: %s", e)
-        return make_infra_error(f"Architecture agent unexpected error: {e}")
+        return make_fail("INFRASTRUCTURE", None, f"Archi agent error: {e}")
 
-    if not new_plan.get("resources"):
-        return make_infra_error(
-            f"Architecture agent produced empty resource list. Prompt: {state['prompt'][:100]}"
-        )
+    # ── Step 3: Validate + re-prompt nếu có defect ────────────────────────────
+    # Re-prompt 1 lần: LLM thấy lại output + danh sách defect cụ thể để tự sửa.
+    defects = _plan_defects(plan)
+    if defects:
+        logger.warning("Archi agent: %d defect — re-prompt: %s", len(defects), defects[:5])
+        retry_msgs = messages + [
+            {"role": "assistant", "content": raw},
+            {"role": "user", "content": DEFECT_FIX.format(
+                defects="\n".join(f"- {d}" for d in defects))},
+        ]
+        try:
+            raw = call_llm(retry_msgs, agent="architecture")
+            plan = _parse_plan(raw)
+        except Exception as e:
+            return make_fail("INFRASTRUCTURE", None, f"Archi agent retry error: {e}")
+        defects = _plan_defects(plan)
+        if defects:
+            return make_fail("INFRASTRUCTURE", None, f"Plan still has defects after retry: {defects[:3]}")
 
-    for r in new_plan["resources"]:
-        if "type" not in r or "name" not in r:
-            return make_infra_error(f"Resource item thiếu 'type' hoặc 'name': {r}")
-        r.setdefault("attrs", {})
-        r.setdefault("refs", {})
+    logger.info("Archi agent: %d resources, %d data_sources",
+                len(plan["resources"]), len(plan["data_sources"]))
 
-    for d in new_plan.get("data_sources", []):
-        if "type" not in d or "name" not in d:
-            return make_infra_error(f"Data source item thiếu 'type' hoặc 'name': {d}")
-        if isinstance(d.get("filters"), list):
-            d["filters"] = {}
-
-    if fix and _root_cause == "architecture" and state["arch_retry_count"] > 0 and _plan_unchanged(old_plan, new_plan):
-        logger.warning("Architecture agent trả về plan giống hệt sau fix instruction")
-        return make_infra_error(
-            "Architecture agent returned identical resource types after fix instruction. "
-            f"Expected new resources based on: {fix}"
-        )
-
-    logger.info("Architecture agent: %d resources", len(new_plan.get("resources", [])))
-    return {"infrastructure_plan": new_plan}
+    # ── Step 4: Cập nhật state ──────────────────────────────────────────────────
+    # Reset eng/sec: re-plan = code mới → lỗi cũ không còn liên quan, tránh cạn budget oan.
+    # Không reset "arch" (budget vòng re-plan) và "deploy" (vòng A5 riêng).
+    blank = {"count": 0, "last_error_type": "", "last_error_details": "", "error_history": []}
+    out: dict = {
+        "infrastructure_plan": plan,
+        "fix_feedback": {},
+        "retries": {**state["retries"], "eng": {**blank}, "sec": {**blank}},
+    }
+    if fix_instruction and fix_feedback.get("root_cause") == "architecture":
+        out["arch_error_history"] = state["arch_error_history"] + [{"fix_instruction": fix_instruction}]
+    return out

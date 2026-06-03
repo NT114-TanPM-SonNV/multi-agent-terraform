@@ -1,138 +1,181 @@
-"""Security Agent — Agent 2 trong pipeline.
+"""Agent 2 — Security Policy (security_node)
 
-Nhận infrastructure_plan từ Agent 1, thêm các security attribute cơ bản
-cho từng resource. Chỉ xử lý flat HCL attrs (không nested block).
+Chọn Checkov rules cần enforce cho từng resource, dựa trên user intent.
+KHÔNG chạy Checkov → shift-left (early classification, không enforcement).
 
-Output: security_constraints dict ghi vào LangGraph State.
-  {"aws_db_instance.main": {"storage_encrypted": true, "deletion_protection": true}, ...}
+Workflow 2 bước:
+  1. Chọn category phù hợp với resource/intent (ENCRYPTION, IAM, NETWORKING, ...)
+  2. Trong mỗi category đó, chọn specific rules (CKV IDs) phù hợp
+  → Output: danh sách CKV IDs per resource để A3 implement + A4 enforce.
+
+Input: state["prompt"], state["infrastructure_plan"]
+Output: state["security_profile"] ({label: {type, checks}} per resource)
+
+Profile schema:
+  {"aws_s3_bucket.main": {"type": "aws_s3_bucket", "checks": ["CKV_AWS_19", "CKV_AWS_70"]}}
+
+Cơ chế grounding:
+  - catalog.json map resource_type → {category → [(id, name)]}
+  - Menu inject per resource: LLM chỉ thấy và chọn rules THỰC SỰ áp dụng cho type đó
+  - _clean_profile validate: drop bất kỳ ID không có trong menu (hallucinate)
+
+Tại sao bỏ posture (minimal/standard/strict)?
+  - Posture scalar là proxy mờ cho intent thật → A2 gán sai category vì bị đánh lừa bởi văn phong
+  - Category + rule selection: A2 quyết định trực tiếp "resource này cần enforce rule nào"
+  - A4 không cần level/tier trung gian, chỉ cần `check_ids = set(checks)` per resource
+
+Tại sao A2 fail không chặn pipeline?
+  - Fail → profile với checks=[] cho mọi resource, security_agent_failed=True
+  - A4 đọc security_agent_failed → skip gate → best-effort deploy
 """
 import json
 import logging
-import re
+from pathlib import Path
 
 from core.state import AgentState
-from core.llm import call_llm_with_parse_retry
-from core.errors import make_infra_error
+from core.llm import call_llm
 from core.parsers import parse_llm_json
-from prompts.security_v2 import SYSTEM_PROMPT as _SYSTEM_PROMPT
-from prompts.security_v2 import TOP_PROMPT as _TOP, BOTTOM_PROMPT as _BOTTOM
+from prompts.security import SYSTEM_PROMPT, USER_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
-_PLAN_TAG = re.compile(r"<plan>.*?</plan>", re.DOTALL | re.IGNORECASE)
+_CATALOG_FILE = Path(__file__).parent.parent / "core" / "catalog.json"
 
+def _load_catalog() -> dict[str, dict[str, list[tuple[str, str]]]]:
+    """Nạp catalog.json → {resource_type → {category → [(id, name)]}}.
 
-def _parse_security_response(text: str) -> dict:
-    return parse_llm_json(text, {"security_constraints": dict})
-
-
-def _split_constraints(raw_constraints: dict) -> tuple[dict, dict]:
-    """Tách LLM output thành 2 dict riêng biệt.
-
-    Input:  {"type.name": {"attr": {"value": <val>, "ckv_id": "CKV_AWS_17"|null}}}
-    Output: (flat_attrs, ckv_ids)
-      flat_attrs = {"type.name": {"attr": <val>}}
-                   ← A3 dùng để inject vào HCL (flat primitive)
-      ckv_ids    = {"type.name": {"attr": "CKV_AWS_17"}}
-                   ← A4 dùng để filter Checkov (chỉ chứa attrs có ckv_id non-null)
-
-    Backward-compatible: nếu LLM sinh flat value thay vì {"value":...,"ckv_id":...},
-    vẫn accept và coi ckv_id = null (attr sẽ fallback sang text check trong A4).
+    catalog.json gộp single-resource (CKV_AWS_*) + graph checks (CKV2_AWS_*)
+    với cùng format: {"id", "name", "cat": [...], "connected_types": [...]}.
+    Sinh bởi core/build_catalog.py — chạy lại khi nâng Checkov.
     """
-    flat_attrs: dict = {}
-    ckv_ids: dict = {}
-    for resource_label, attrs in raw_constraints.items():
-        if not isinstance(attrs, dict):
-            continue
-        flat: dict = {}
-        per_attr_ckv: dict = {}
-        for attr, spec in attrs.items():
-            if isinstance(spec, dict) and "value" in spec:
-                flat[attr] = spec["value"]
-                ckv = spec.get("ckv_id")
-                if ckv and isinstance(ckv, str):
-                    per_attr_ckv[attr] = ckv
-            else:
-                # backward-compat: LLM sinh flat value trực tiếp → ckv_id = null
-                flat[attr] = spec
-        if flat:
-            flat_attrs[resource_label] = flat
-        if per_attr_ckv:
-            ckv_ids[resource_label] = per_attr_ckv
-    return flat_attrs, ckv_ids
+    result: dict[str, dict[str, list[tuple[str, str]]]] = {}
+    try:
+        data = json.loads(_CATALOG_FILE.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning("Không nạp được catalog.json: %s — A2 menu rỗng", e)
+        return result
+    for rtype, checks in data.items():
+        by_cat = result.setdefault(rtype, {})
+        for c in checks:
+            cid = c.get("id", "")
+            name = c.get("name", "")
+            for cat in c.get("cat", []):
+                by_cat.setdefault(cat, []).append((cid, name))
+    return result
 
 
-def _constraints_unchanged(old: dict, new: dict) -> bool:
-    """Kiểm tra LLM có thực sự thay đổi constraints sau fix instruction không."""
-    if not old:
-        return False
-    return old == new
+# Nạp 1 lần khi import.
+_CATALOG: dict[str, dict[str, list[tuple[str, str]]]] = _load_catalog()
+
+
+
+
+def _valid_ids(rtype: str) -> frozenset[str]:
+    """Tập hợp tất cả IDs hợp lệ trong menu của resource type này."""
+    by_cat = _CATALOG.get(rtype, {})
+    return frozenset(cid for entries in by_cat.values() for cid, _ in entries)
+
+
+def _build_menu(rtype: str) -> str:
+    """Render menu dạng text để inject vào prompt.
+
+    Format:
+      ENCRYPTION:
+        CKV_AWS_19: Ensure all data stored in the S3 bucket is securely encrypted at rest
+        CKV_AWS_145: Ensure that S3 buckets are encrypted with KMS by default
+      IAM:
+        CKV_AWS_70: Ensure S3 bucket does not allow an action with any Principal
+    """
+    by_cat = _CATALOG.get(rtype, {})
+    if not by_cat:
+        return "    (no applicable security checks for this resource type)"
+    lines = []
+    for cat in sorted(by_cat):
+        lines.append(f"    {cat}:")
+        for cid, name in sorted(by_cat[cat]):
+            lines.append(f"      {cid}: {name}")
+    return "\n".join(lines)
+
+
+_RETRY_MSG = (
+    "Response could not be parsed as JSON. Return ONLY a raw JSON object: "
+    '{"type.name": {"checks": ["CKV_AWS_NNN", ...]}}. '
+    "Empty list [] is valid. Empty object {} is valid."
+)
+
+
+def _clean_profile(parsed: dict, resources: list[dict]) -> dict[str, dict]:
+    """Chuẩn hoá LLM output thành profile dict đồng nhất.
+
+    Input format từ LLM: {"aws_s3_bucket.main": {"checks": ["CKV_AWS_19", "CKV_AWS_70"]}}
+    Output format:       {"aws_s3_bucket.main": {"type": "aws_s3_bucket",
+                                                  "checks": ["CKV_AWS_19", "CKV_AWS_70"]}}
+
+    Logic:
+      - Validate: drop IDs không có trong menu của resource type (hallucinate hoặc sai type)
+      - LLM bỏ qua resource → checks=[] (không enforce gì, A2 đã phán không cần)
+      - Sort để output ổn định.
+    """
+    out: dict[str, dict] = {}
+    for r in resources:
+        label = f"{r.get('type')}.{r.get('name')}"
+        rtype = r.get("type", "")
+
+        prof = parsed.get(label, {})
+        raw_checks = prof.get("checks", []) if isinstance(prof, dict) else []
+
+        valid = _valid_ids(rtype)
+        checks = sorted(c for c in raw_checks if isinstance(c, str) and c in valid)
+
+        out[label] = {"type": rtype, "checks": checks}
+    return out
 
 
 def security_node(state: AgentState) -> dict:
-    """LangGraph node function cho Security Agent."""
-    _validation = state.get("validation_result") or {}
-    fix         = _validation.get("fix_instruction")
-    _root_cause = _validation.get("root_cause")
-    plan        = state["infrastructure_plan"]
-    old_constraints = state.get("security_constraints") or {}
+    """LangGraph node — chọn security rules cho từng resource trong plan A1."""
+    resources = state["infrastructure_plan"].get("resources", [])
+    if not resources:
+        return {"security_profile": {}}
 
-    plan_json = json.dumps(plan, indent=2)
-
-    if fix and _root_cause == "security" and state["sec_retry_count"] > 0:
-        user_content = (
-            _TOP + plan_json + "\n\n"
-            f"PREVIOUS CONSTRAINTS WERE WRONG.\n"
-            f"Previous constraints:\n{json.dumps(old_constraints, indent=2)}\n\n"
-            f"Fix instruction:\n{fix}\n\n"
-            "Patch ONLY what is indicated. Keep all others unchanged."
-            + _BOTTOM
-        )
-    else:
-        user_content = _TOP + plan_json + _BOTTOM
+    # Dựng menu per resource để inject vào prompt
+    menu_blocks = []
+    for r in resources:
+        label = f"{r.get('type')}.{r.get('name')}"
+        menu_blocks.append(f"  {label}:\n{_build_menu(r.get('type', ''))}")
+    menu_str = "\n".join(menu_blocks)
 
     messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user",   "content": user_content},
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": USER_TEMPLATE.format(
+            PROMPT=state["prompt"],
+            PLAN=json.dumps(state["infrastructure_plan"], indent=2),
+            MENU=menu_str,
+        )},
     ]
 
     raw = ""
-    try:
-        raw, parsed = call_llm_with_parse_retry(messages, _parse_security_response)
-        raw_constraints = parsed["security_constraints"]
-    except TimeoutError as e:
-        logger.error("Security agent timeout: %s", e)
-        return make_infra_error(f"Security agent LLM timeout: {e}")
-    except (ValueError, KeyError, TypeError) as e:
-        stripped = _PLAN_TAG.sub("", raw).strip() if raw else ""
-        if not stripped:
-            logger.info("Security agent: no JSON output (no constraints needed)")
-            return {"security_constraints": {}, "security_ckv_ids": {}}
-        logger.error("Security agent parse error: %s | raw: %.300s", e, raw)
-        return make_infra_error(f"Security agent parse error: {e}. Raw: {raw[:300]}")
-    except Exception as e:
-        logger.error("Security agent unexpected error: %s", e)
-        return make_infra_error(f"Security agent unexpected error: {e}")
+    parsed: dict = {}
+    for attempt in range(2):
+        try:
+            raw = call_llm(messages, agent="security")
+            parsed = parse_llm_json(raw, {})
+            break
+        except Exception as e:
+            if attempt == 0:
+                logger.warning("Security agent retry: %s", e)
+                messages = messages + [
+                    {"role": "assistant", "content": raw or ""},
+                    {"role": "user", "content": _RETRY_MSG},
+                ]
+            else:
+                logger.warning("Security agent failed: %s — checks=[] cho mọi resource", e)
+                profile = _clean_profile({}, resources)
+                return {"security_profile": profile, "security_agent_failed": True}
 
-    # Tách thành flat_attrs (cho A3) và ckv_ids (cho A4)
-    new_constraints, new_ckv_ids = _split_constraints(raw_constraints)
+    if not isinstance(parsed, dict):
+        parsed = {}
 
-    # Retry guard
-    if fix and _root_cause == "security" and state["sec_retry_count"] > 0:
-        if _constraints_unchanged(old_constraints, new_constraints):
-            return make_infra_error(
-                "Security agent returned identical constraints after fix instruction. "
-                f"Expected change based on: {fix}"
-            )
-
-    # Drop constraints trỏ tới resource không tồn tại trong plan
-    plan_keys = {f"{r['type']}.{r['name']}" for r in plan.get("resources", [])}
-    valid_constraints = {k: v for k, v in new_constraints.items() if k in plan_keys and v}
-    valid_ckv_ids     = {k: v for k, v in new_ckv_ids.items()     if k in plan_keys and v}
-    dropped = len(new_constraints) - len(valid_constraints)
-    if dropped:
-        logger.warning("Security agent: dropped %d constraints (not in plan or empty)", dropped)
-
-    all_ckv = [ckv for ids in valid_ckv_ids.values() for ckv in ids]
-    logger.info("Security agent: %d resources, %d CKV IDs", len(valid_constraints), len(all_ckv))
-    return {"security_constraints": valid_constraints, "security_ckv_ids": valid_ckv_ids}
+    profile = _clean_profile(parsed, resources)
+    checks_by_res = {lbl: p["checks"] for lbl, p in profile.items()}
+    logger.info("Security agent: %d resources | checks=%s", len(profile), checks_by_res)
+    return {"security_profile": profile}

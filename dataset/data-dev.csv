@@ -1,0 +1,2740 @@
+Resource,Prompt,Rego intent,Difficulty,Reference output,Intent
+"aws_route53_record, aws_route53_zone","Set up a TXT recordfor domain ownership verification purposes using Route 53 resources. The verification string should be ""passwordpassword"" and the name of the zone should be ""example""","package terraform.validation
+
+default is_configuration_valid = false
+
+default is_valid_r53_zone = false
+
+default is_valid_r53_record = false
+
+# Validate aws_route53_zone resource
+is_valid_r53_zone {
+        some i
+        resource := input.configuration.root_module.resources[i]
+    resource.type == ""aws_route53_zone""
+    resource.expressions.name.constant_value == ""example53.com""
+}
+
+# Validate aws_route53_record
+is_valid_r53_record {
+        some i
+    resource := input.configuration.root_module.resources[i]
+    resource.type == ""aws_route53_record""
+    resource.expressions.name
+    resource.expressions.type.constant_value == ""TXT""
+    resource.expressions.ttl
+    resource.expressions.records.constant_value[0] == ""passwordpassword""
+    resource.expressions.zone_id.references[0] == ""aws_route53_zone.example.zone_id""
+}
+
+
+# Combine all checks into a final rule
+is_configuration_valid {
+    is_valid_r53_zone
+    is_valid_r53_record
+}",2,"provider ""aws"" {
+  region = ""us-east-1""
+}
+
+resource ""aws_route53_zone"" ""example"" {
+  name = ""example53.com""
+}
+
+# TXT Record for domain verification or other purposes
+resource ""aws_route53_record"" ""example_txt"" {
+  zone_id = aws_route53_zone.example.zone_id
+  name    = ""sub.example53.com""
+  type    = ""TXT""
+  ttl     = ""300""
+  records = [""passwordpassword""] 
+}","Has one ""aws_route53_zone"" resource
+    with ""name"" set to ""example53.com""
+
+Has one ""aws_route53_record"" resource
+    with ""name""
+    with ""type"" set to ""TXT""
+    with ""ttl""
+    with ""records"" set to a string
+    with ""zone_id"" referencing the ""aws_route53_zone"" resource
+"
+"aws_codebuild_project, aws_iam_role",create a AWS codebuild project resource with example iam role and secondary sources,"package terraform.validation
+
+import future.keywords.in
+
+default has_valid_resources = false
+
+# Rule for aws_iam_role resource
+has_valid_iam_role(resources) { 
+        some resource in resources 
+    resource.type == ""aws_iam_role"" 
+    contains(resource.change.after.assume_role_policy,""codebuild.amazonaws.com"") 
+} 
+
+has_valid_codebuild {
+        some i
+    resource := input.planned_values.root_module.resources[i]
+    resource.type == ""aws_codebuild_project""
+        resource.values.artifacts
+    resource.values.environment
+    resource.values.name
+    resource.values.source[_].type
+    resource.values.secondary_sources[_].type
+    role := input.configuration.root_module.resources[i]
+    role.expressions.service_role
+}
+
+has_valid_bucket {
+    some i
+    resource := input.planned_values.root_module.resources[i]
+    resource.type == ""aws_s3_bucket""
+    
+}
+
+
+has_valid_resources {
+        has_valid_iam_role(input.resource_changes)
+    has_valid_codebuild
+}",4,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 5.75""
+    }
+  }
+
+  required_version = ""~> 1.9.8""
+}
+
+provider ""aws"" {
+  region  = ""us-east-1""
+  profile = ""admin-1""
+
+  assume_role {
+    role_arn = ""arn:aws:iam::590184057477:role/yicun-iac""
+  }
+}
+
+data ""aws_iam_policy_document"" ""assume_role"" {
+  statement {
+    effect = ""Allow""
+
+    principals {
+      type        = ""Service""
+      identifiers = [""codebuild.amazonaws.com""]
+    }
+
+    actions = [""sts:AssumeRole""]
+  }
+}
+
+resource ""aws_iam_role"" ""test_role7"" {
+  name               = ""test_role7""
+  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+}
+
+
+resource ""aws_codebuild_project"" ""example7"" {
+  name          = ""test-project7""
+  service_role  = aws_iam_role.test_role7.arn
+
+  artifacts {
+    type = ""NO_ARTIFACTS""
+  }
+
+  environment {
+    compute_type = ""BUILD_GENERAL1_SMALL""
+    image        = ""aws/codebuild/standard:7.0-24.10.29""
+    type         = ""LINUX_CONTAINER""
+  }
+
+  source {
+    type            = ""GITHUB""
+    location        = ""https://github.com/neilbalch/SimplePythonTutorial.git""
+    git_clone_depth = 1
+  }
+
+  secondary_sources {
+    source_identifier = ""SecondarySource""
+    type            = ""GITHUB""
+    location        = ""https://github.com/pH-7/Simple-Java-Calculator.git""
+    git_clone_depth =  1
+  }
+}","Has one ""aws_iam_role"" resource and one ""aws_codebuild_project"" resource with a ""secondary_sources"" block"
+"aws_iam_group, aws_iam_group_policy_attachment, aws_iam_policy, aws_iam_policy_document",Make a basic AWS IAM group example with an example group policy attachment resource attaching a policy to it,"package iam_group_policy_attachment
+
+import future.keywords.in
+
+default valid := false
+
+valid {
+	some group_attachment in input.configuration.root_module.resources
+	group_attachment.type == ""aws_iam_group_policy_attachment""
+
+	some group in input.configuration.root_module.resources
+	group.type == ""aws_iam_group""
+	group.address in group_attachment.expressions.group.references
+
+	some policy in input.configuration.root_module.resources
+	policy.type == ""aws_iam_policy""
+	policy.address in group_attachment.expressions.policy_arn.references
+}",3,"resource ""aws_iam_group"" ""group"" {
+  name = ""test-group""
+}
+
+data ""aws_iam_policy_document"" ""example"" {
+  statement {
+    effect = ""Allow""
+    actions = [
+      ""ec2:DescribeSubnets"",
+      ""ec2:DescribeSecurityGroups"",
+      ""ec2:DescribeVpcs""
+    ]
+    resources = [
+      ""*""
+    ]
+  }
+}
+
+resource ""aws_iam_policy"" ""policy"" {
+  name        = ""test-policy""
+  description = ""A test policy""
+  policy      = data.aws_iam_policy_document.example.json
+}
+
+resource ""aws_iam_group_policy_attachment"" ""test-attach"" {
+  group      = aws_iam_group.group.name
+  policy_arn = aws_iam_policy.policy.arn
+}","Has one ""aws_iam_group"" resource
+with one ""name"" with any value
+
+Has one ""aws_iam_policy"" resource
+with one ""policy"" with any value
+
+Has one ""aws_iam_group_policy_attachment"" resource
+with one ""group"" with the group resource name
+with one ""policy_arn"" with the policy resource arn"
+"aws_codebuild_project, aws_iam_policy, aws_iam_role, aws_iam_role_policy_attachment, aws_s3_bucket, aws_security_group, aws_subnet, aws_vpc, aws_iam_policy_document, aws_iam_policy_document",Infrastructure for an autograder for a CS class. The autograde needs to run students' code stored on GitHub in a specific environment and store the result. Make sure that the autograder prevents the students' code from reaching the internet. Accomplish this using AWS CodeBuild and AWS VPC.,"package autograder_high_jail
+
+import rego.v1
+
+codebuild_project_valid(codebuild_project, security_group, subnet, vpc) if {
+	some artifact in codebuild_project.expressions.artifacts
+	artifact.location
+	artifact.type
+	artifact.name
+
+	some environment in codebuild_project.expressions.environment
+	environment.compute_type
+	environment.image
+	environment.type
+
+	some source in codebuild_project.expressions.source
+	source.type.constant_value == ""GITHUB""
+	source.location
+
+	some vpc_config in codebuild_project.expressions.vpc_config
+	security_group.address in vpc_config.security_group_ids.references
+	subnet.address in vpc_config.subnets.references
+	vpc.address in vpc_config.vpc_id.references
+}
+
+security_group_valid(security_group, vpc) if {
+	vpc.address in security_group.expressions.vpc_id.references
+}
+
+subnet_valid(subnet, vpc) if {
+	subnet.expressions.cidr_block
+	vpc.address in subnet.expressions.vpc_id.references
+}
+
+vpc_valid(vpc) if {
+	vpc.expressions.cidr_block
+}
+
+default valid := false
+
+valid if {
+	resources := input.configuration.root_module.resources
+	some codebuild_project in resources
+	codebuild_project.type == ""aws_codebuild_project""
+	some security_group in resources
+	security_group.type == ""aws_security_group""
+	some subnet in resources
+	subnet.type == ""aws_subnet""
+	some vpc in resources
+	vpc.type == ""aws_vpc""
+	codebuild_project_valid(codebuild_project, security_group, subnet, vpc)
+	security_group_valid(security_group, vpc)
+	subnet_valid(subnet, vpc)
+	vpc_valid(vpc)
+}",6,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 5.75""
+    }
+  }
+
+  required_version = ""~> 1.9.8""
+}
+
+provider ""aws"" {
+  region = ""us-east-1""
+  profile = ""admin-1""
+
+  assume_role {
+    role_arn = ""arn:aws:iam::590184057477:role/yicun-iac""
+  }
+}
+
+resource ""aws_s3_bucket"" ""artifact_bucket"" {
+  bucket_prefix = ""artifact-bucket-""
+}
+
+resource ""aws_codebuild_project"" ""autograder_build"" {
+  name         = ""autograder_build""
+  service_role = aws_iam_role.autograder_build_role.arn
+
+  artifacts {
+    type     = ""S3""
+    location = aws_s3_bucket.artifact_bucket.arn
+    name     = ""results.zip"" # include this
+  }
+
+  environment { # arguments required, exact value not specified
+    compute_type = ""BUILD_GENERAL1_SMALL""
+    image        = ""aws/codebuild/standard:7.0-24.10.29""
+    type         = ""LINUX_CONTAINER""
+  }
+
+  source {
+    type            = ""GITHUB""
+    git_clone_depth = 1 # good to have, not required
+    location        = ""github.com/source-location""
+  }
+
+  vpc_config {
+    vpc_id             = aws_vpc.autograder_vpc.id
+    subnets            = [aws_subnet.autograder_vpc_subnet.id]
+    security_group_ids = [aws_security_group.autograder_vpc_securitygroup.id]
+  }
+}
+
+resource ""aws_vpc"" ""autograder_vpc"" {
+  cidr_block = ""10.0.0.0/16"" # extra value not specified
+}
+
+resource ""aws_subnet"" ""autograder_vpc_subnet"" {
+  vpc_id     = aws_vpc.autograder_vpc.id
+  cidr_block = ""10.0.0.0/24"" # include this
+}
+
+resource ""aws_security_group"" ""autograder_vpc_securitygroup"" {
+  vpc_id = aws_vpc.autograder_vpc.id
+}
+
+resource ""aws_iam_role"" ""autograder_build_role"" {
+  assume_role_policy = data.aws_iam_policy_document.autograder_build_policy_assume.json
+}
+
+data ""aws_iam_policy_document"" ""autograder_build_policy_assume"" {
+  statement {
+    actions = [""sts:AssumeRole""]
+
+    principals {
+      type        = ""Service""
+      identifiers = [""codebuild.amazonaws.com""]
+    }
+  }
+}
+
+data ""aws_iam_policy_document"" ""autograder_build_policy"" {
+  statement {
+    effect = ""Allow""
+    actions = [
+      ""ec2:DescribeSubnets"",
+      ""ec2:DescribeSecurityGroups"",
+      ""ec2:DescribeVpcs""
+    ]
+    resources = [
+      ""*""
+    ]
+  }
+
+  statement {
+    effect  = ""Allow""
+    actions = [""s3:*""]
+    resources = [
+      aws_s3_bucket.artifact_bucket.arn,
+      ""${aws_s3_bucket.artifact_bucket.arn}/*"",
+    ]
+  }
+}
+
+resource ""aws_iam_policy"" ""autograder_build_policy"" {
+  name        = ""lambda_policy""
+  description = ""Grants permissions to Lambda to describe vpc, subnet, security group""
+
+  policy = data.aws_iam_policy_document.autograder_build_policy.json
+}
+
+resource ""aws_iam_role_policy_attachment"" ""lambda_policy_attach"" {
+  role       = aws_iam_role.autograder_build_role.name
+  policy_arn = aws_iam_policy.autograder_build_policy.arn
+}","have one ""aws_codebuild_project"" resource
+  with ""artifacts"" argument block
+    with ""type"" argument with value ""S3""
+    with ""location"" argument
+    with ""name"" argument
+  with ""environment"" argument block
+    with ""computer_type"" argument
+    with ""image"" argument
+    with ""type"" argument
+  with ""source"" argument block
+    with ""type"" argument with value ""GITHUB""
+    with ""location"" argument
+  with ""vpc_config"" argument block
+    with ""vpc_id"" argument
+    with ""subnets"" argument
+    with ""security_group_ids"" argument
+have one ""aws_vpc"" resource
+  with ""cidr_block"" argument
+have one ""aws_subnet"" argument
+  with ""vpc_id"" argument
+  with ""cidr_block"" argument
+with one ""aws_security_group"" resource
+  with ""vpc_id"" argument"
+"aws_lightsail_disk, aws_availability_zones",create a Lightsail Disk resource,"package terraform.validation
+
+default has_valid_lightsail_disk = false
+
+# Rule for aws_lightsail_disk resource with specific arguments
+has_valid_lightsail_disk {
+    some i
+    resource := input.planned_values.root_module.resources[i]
+    resource.type == ""aws_lightsail_disk""
+    resource.values.name
+    resource.values.size_in_gb
+    resource.values.availability_zone
+}",2,"provider ""aws"" {
+  region     = ""us-east-1""
+}
+
+data ""aws_availability_zones"" ""available"" {
+  state = ""available""
+
+  filter {
+    name   = ""opt-in-status""
+    values = [""opt-in-not-required""]
+  }
+}
+
+resource ""aws_lightsail_disk"" ""test"" {
+  name              = ""test""
+  size_in_gb        = 8
+  availability_zone = data.aws_availability_zones.available.names[0]
+}","have one aws_lightsail_disk resource
+    with name
+    with size_in_gb
+    with availability_zone"
+"aws_vpc, aws_vpc_dhcp_options, aws_vpc_dhcp_options_association","sets up a basic AWS network infrastructure consisting of a Virtual Private Cloud (VPC) with a custom DHCP options set. The VPC is configured with a CIDR block of 192.168.0.0/16. The DHCP options include a domain name (windomain.local), a combination of custom and Google's DNS servers (192.168.56.102 and 8.8.8.8), and a NetBIOS name server. These DHCP options are then associated with the created VPC, customizing its DHCP settings.
+
+
+
+
+
+
+","package terraform.validation
+
+# Set default validation states
+default is_valid_vpc = false
+
+default is_valid_dhcp_options = false
+
+default is_valid_dhcp_options_association = false
+
+# Validate aws_vpc resource
+is_valid_vpc {
+        some i
+        resource := input.configuration.root_module.resources[i]
+        resource.type == ""aws_vpc""
+        resource.expressions.cidr_block.constant_value == ""192.168.0.0/16""
+}
+
+# Validate aws_vpc_dhcp_options resource
+is_valid_dhcp_options {
+        some i
+        resource := input.planned_values.root_module.resources[i]
+        resource.type == ""aws_vpc_dhcp_options""
+        resource.values.domain_name == ""windomain.local""
+    resource.values.domain_name_servers == [""192.168.56.102"", ""8.8.8.8""]
+        resource.values.netbios_name_servers != null
+}
+
+# Validate aws_vpc_dhcp_options_association resource
+is_valid_dhcp_options_association {
+        some i
+        resource := input.configuration.root_module.resources[i]
+        resource.type == ""aws_vpc_dhcp_options_association""
+        resource.expressions.dhcp_options_id.references[0] == ""aws_vpc_dhcp_options.default.id""
+        resource.expressions.vpc_id.references[0] == ""aws_vpc.default.id""
+}
+",3,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 4.16""
+    }
+  }
+
+  required_version = "">= 1.2.0""
+}
+# Define the provider block for AWS
+provider ""aws"" {
+  region = ""us-east-2"" # Set your desired AWS region
+}
+
+resource ""aws_vpc"" ""default"" {
+  cidr_block = ""192.168.0.0/16""
+}
+
+resource ""aws_vpc_dhcp_options"" ""default"" {
+  domain_name          = ""windomain.local""
+  domain_name_servers  = concat([""192.168.56.102""], [""8.8.8.8""])
+  netbios_name_servers = [""192.168.56.102""]
+}
+
+resource ""aws_vpc_dhcp_options_association"" ""default"" {
+  vpc_id          = aws_vpc.default.id
+  dhcp_options_id = aws_vpc_dhcp_options.default.id
+}","Has one ""aws_vpc"" resource:
+Configured with a ""cidr_block"" of ""192.168.0.0/16""
+Includes associated custom DHCP options
+
+Has one ""aws_vpc_dhcp_options"" resource:
+Specifies a ""domain_name"" of ""windomain.local""
+Includes DNS servers with a combination of a custom DNS server (""192.168.56.102"") and Google's DNS server (""8.8.8.8"")
+Configures a ""NetBIOS"" name server
+
+Has one ""aws_vpc_dhcp_options_association"" resource:
+Associates the ""aws_vpc_dhcp_options"" with the created ""aws_vpc""
+Customizes DHCP settings specifically for the created VPC environment"
+"aws_codebuild_project, aws_iam_role, aws_s3_bucket, aws_s3_bucket","create a AWS codebuild project resource with example iam role, environment variables, secondary sources, secondary artifacts","package terraform.validation
+
+import future.keywords.in
+
+default has_valid_resources = false
+
+# Rule for aws_iam_role resource
+has_valid_iam_role(resources) { 
+	some resource in resources 
+    resource.type == ""aws_iam_role"" 
+    contains(resource.change.after.assume_role_policy,""codebuild.amazonaws.com"") 
+} 
+
+has_valid_codebuild {
+	some i
+    resource := input.planned_values.root_module.resources[i]
+    resource.type == ""aws_codebuild_project""
+	resource.values.artifacts
+    resource.values.environment
+    resource.values.environment[_].environment_variable
+    resource.values.name
+    resource.values.source[_].type
+    resource.values.secondary_artifacts[_].type
+    resource.values.secondary_sources[_].type
+    role := input.configuration.root_module.resources[i]
+    role.expressions.service_role
+}
+
+has_valid_bucket {
+    some i
+    resource := input.planned_values.root_module.resources[i]
+    resource.type == ""aws_s3_bucket""
+    
+}
+
+
+has_valid_resources {
+	has_valid_iam_role(input.resource_changes)
+    has_valid_codebuild
+}",5,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 5.75""
+    }
+  }
+
+  required_version = ""~> 1.9.8""
+}
+
+provider ""aws"" {
+  region  = ""us-east-1""
+  profile = ""admin-1""
+
+  assume_role {
+    role_arn = ""arn:aws:iam::590184057477:role/yicun-iac""
+  }
+}
+
+resource ""aws_iam_role"" ""test_role11"" {
+  name = ""test_role11""
+
+  assume_role_policy = jsonencode({
+    Version = ""2012-10-17""
+    Statement = [
+      {
+        Action = ""sts:AssumeRole""
+        Effect = ""Allow""
+        Sid    = """"
+        Principal = {
+          Service = ""codebuild.amazonaws.com""
+        }
+      },
+    ]
+  })
+}
+
+resource ""aws_s3_bucket"" ""aprilthirthyfirst"" {
+  bucket = ""aprilthirthyfirst""
+}
+
+resource ""aws_s3_bucket"" ""aprilthirthyfirst2"" {
+  bucket = ""aprilthirthyfirst2""
+}
+
+resource ""aws_codebuild_project"" ""example11"" {
+  name          = ""test-project11""
+  service_role  = aws_iam_role.test_role11.arn
+
+  artifacts {
+    location  = aws_s3_bucket.aprilthirthyfirst.bucket
+    name     = ""results.zip""
+    type      = ""S3""
+    path      = ""/""
+    packaging = ""ZIP""
+  }
+
+  secondary_artifacts {
+    artifact_identifier =  ""SecondaryArtifact""
+    location  = aws_s3_bucket.aprilthirthyfirst2.bucket
+    name     = ""results.zip""
+    type      = ""S3""
+    path      = ""/""
+    packaging = ""ZIP""
+  }
+
+  environment {
+    compute_type                = ""BUILD_GENERAL1_SMALL""
+    image                       = ""aws/codebuild/standard:7.0-24.10.29""
+    type                        = ""LINUX_CONTAINER""
+    image_pull_credentials_type = ""CODEBUILD""
+
+    environment_variable {
+      name  = ""SOME_KEY1""
+      value = ""SOME_VALUE1""
+    }
+
+    environment_variable {
+      name  = ""SOME_KEY2""
+      value = ""SOME_VALUE2""
+      type  = ""PARAMETER_STORE""
+    }
+
+  }
+
+  source {
+    type            = ""GITHUB""
+    location        = ""https://github.com/mitchellh/packer.git""
+    git_clone_depth = 1
+  }
+
+  source_version = ""master""
+
+  secondary_sources {
+    source_identifier = ""source2""
+    type            = ""GITHUB""
+    location        = ""https://github.com/mitchellh/packer.git""
+    git_clone_depth = 1
+  }
+
+  secondary_source_version {
+    source_identifier = ""source2""
+    source_version = ""master""
+  }
+}","Has one ""aws_iam_role"" resource, at least one ""aws_s3_bucket"" resource, and one ""aws_codebuild_project"" resource with a ""secondary_artifacts"" block, with a ""secondary_sources"" block, and at least one ""environment_variable"" within the ""environment"" block"
+aws_elasticache_user,authenticate a elasticache user with redis,"package main
+
+import future.keywords.in
+
+default allow = false
+
+aws_elasticache_user_valid(resources) {
+    some resource in resources
+    resource.type == ""aws_elasticache_user""
+    resource.change.after.engine == ""REDIS""
+}
+
+# Aggregate all checks
+allow {
+    aws_elasticache_user_valid(input.resource_changes)
+}",1,"resource ""aws_elasticache_user"" ""test"" {
+  user_id       = ""testUserId""
+  user_name     = ""testUserName""
+  access_string = ""on ~app::* -@all +@read +@hash +@bitmap +@geo -setbit -bitfield -hset -hsetnx -hmset -hincrby -hincrbyfloat -hdel -bitop -geoadd -georadius -georadiusbymember""
+  engine        = ""REDIS""
+  passwords     = [""password123456789""]
+}","requires access string, engine = REDIS, user id and user name"
+aws_egress_only_internet_gateway,"creates an egress-only internet gateway named ""pike"" associated with a specified VPC, allowing IPv6-enabled instances to connect to the internet without allowing inbound internet traffic, and tags it with ""permissions"".","package terraform.validation
+
+# Set default validation state for aws_egress_only_internet_gateway
+default is_valid_egress_only_internet_gateway = false
+
+# Validate aws_egress_only_internet_gateway resource
+is_valid_egress_only_internet_gateway {
+	some i
+	resource := input.configuration.root_module.resources[i]
+	resource.type == ""aws_egress_only_internet_gateway""
+	resource.expressions.vpc_id.constant_value != null
+	resource.expressions.tags.constant_value != null # Verifies it is tagged with ""permissions""
+}",2,"# Define the provider block for AWS
+provider ""aws"" {
+  region = ""us-east-2"" # Set your desired AWS region
+}
+
+resource ""aws_egress_only_internet_gateway"" ""pike"" {
+  vpc_id = ""vpc-0c33dc8cd64f408c4""
+  tags = {
+    pike = ""permissions""
+  }
+}","Has one ""aws_egress_only_internet_gateway"" resource:
+Associated with a specified ""aws_vpc"" resource
+Designed to allow IPv6-enabled instances within the VPC to connect to the internet while preventing inbound internet traffic
+Tagged with ""permissions"" to categorize or specify its role or access levels within the infrastructure"
+"aws_vpc, aws_vpc_dhcp_options, aws_vpc_dhcp_options_association","sets up a basic AWS network infrastructure consisting of a Virtual Private Cloud (VPC) with a custom DHCP options set. The VPC is configured with a CIDR block The DHCP options include a domain name (windomain.local), a combination of custom and Google's DNS servers (192.168.56.102 and 8.8.8.8), and a NetBIOS name server (192.168.56.102). These DHCP options are then associated with the created VPC, customizing its DHCP settings.
+
+
+
+
+
+
+","package terraform.validation
+
+# Set default validation states
+default is_valid_vpc = false
+
+default is_valid_dhcp_options = false
+
+default is_valid_dhcp_options_association = false
+
+# Validate aws_vpc resource
+is_valid_vpc {
+        some i
+        resource := input.configuration.root_module.resources[i]
+        resource.type == ""aws_vpc""
+        resource.expressions.cidr_block.constant_value != null
+}
+
+# Validate aws_vpc_dhcp_options resource
+is_valid_dhcp_options {
+        some i
+        resource := input.planned_values.root_module.resources[i]
+        resource.type == ""aws_vpc_dhcp_options""
+        resource.values.domain_name == ""windomain.local""
+    resource.values.domain_name_servers == [""192.168.56.102"", ""8.8.8.8""]
+        resource.values.netbios_name_servers == [""192.168.56.102""]
+}
+
+# Validate aws_vpc_dhcp_options_association resource
+is_valid_dhcp_options_association {
+        some i
+        resource := input.configuration.root_module.resources[i]
+        resource.type == ""aws_vpc_dhcp_options_association""
+        resource.expressions.dhcp_options_id.references[0] == ""aws_vpc_dhcp_options.default.id""
+        resource.expressions.vpc_id.references[0] == ""aws_vpc.default.id""
+}
+",3,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 4.16""
+    }
+  }
+
+  required_version = "">= 1.2.0""
+}
+# Define the provider block for AWS
+provider ""aws"" {
+  region = ""us-east-2"" # Set your desired AWS region
+}
+
+resource ""aws_vpc"" ""default"" {
+  cidr_block = ""192.168.0.0/16""
+}
+
+resource ""aws_vpc_dhcp_options"" ""default"" {
+  domain_name          = ""windomain.local""
+  domain_name_servers  = concat([""192.168.56.102""], [""8.8.8.8""])
+  netbios_name_servers = [""192.168.56.102""]
+}
+
+resource ""aws_vpc_dhcp_options_association"" ""default"" {
+  vpc_id          = aws_vpc.default.id
+  dhcp_options_id = aws_vpc_dhcp_options.default.id
+}","Has one ""aws_vpc"" resource:
+Configured with a ""cidr_block""
+Includes associated custom DHCP options
+
+Has one ""aws_vpc_dhcp_options"" resource:
+Specifies a ""domain_name"" of ""windomain.local""
+Includes DNS servers with a combination of a custom DNS server (""192.168.56.102"") and Google's DNS server (""8.8.8.8"")
+Configures a ""NetBIOS"" name server at ""192.168.56.102""
+
+Has one ""aws_vpc_dhcp_options_association"" resource:
+Associates the ""aws_vpc_dhcp_options"" with the created ""aws_vpc""
+Customizes DHCP settings specifically for the created VPC environment"
+"aws_iam_role, aws_kinesis_firehose_delivery_stream, aws_s3_bucket, aws_iam_policy_document",Generate a Kinesis Firehose Delivery Stream with a Splunk destination,"package terraform.validation
+
+import future.keywords.in
+
+default has_valid_resources = false
+
+has_valid_iam_role(resources) { 
+	some resource in resources 
+    resource.type == ""aws_iam_role"" 
+    contains(resource.change.after.assume_role_policy,""firehose.amazonaws.com"") 
+}
+
+has_valid_bucket {
+    some i
+    resource := input.planned_values.root_module.resources[i]
+    resource.type == ""aws_s3_bucket""
+}
+
+has_valid_firehose_delivery_stream {
+	some i
+	resource := input.planned_values.root_module.resources[i]
+    resource.type == ""aws_kinesis_firehose_delivery_stream""
+    resource.values.name
+    resource.values.destination == ""splunk""
+    resource.values.splunk_configuration[_].s3_configuration
+	role := input.configuration.root_module.resources[i]
+    role.expressions.splunk_configuration[_].s3_configuration[_].bucket_arn
+    role.expressions.splunk_configuration[_].s3_configuration[_].role_arn
+}
+
+has_valid_resources {
+	has_valid_iam_role(input.resource_changes)
+	has_valid_bucket
+    has_valid_firehose_delivery_stream
+}",3,"provider ""aws"" {
+  region = ""us-west-2""
+}
+
+data ""aws_iam_policy_document"" ""firehose_assume_role"" {
+  statement {
+    effect = ""Allow""
+
+    principals {
+      type        = ""Service""
+      identifiers = [""firehose.amazonaws.com""]
+    }
+
+    actions = [""sts:AssumeRole""]
+  }
+}
+
+resource ""aws_iam_role"" ""firehose_role"" {
+  name               = ""firehose_test_role""
+  assume_role_policy = data.aws_iam_policy_document.firehose_assume_role.json
+}
+
+resource ""aws_s3_bucket"" ""januaryfifth"" {
+  bucket = ""januaryfifth""
+}
+
+resource ""aws_kinesis_firehose_delivery_stream"" ""test_stream"" {
+  name        = ""terraform-kinesis-firehose-test-stream""
+  destination = ""splunk""
+
+  splunk_configuration {
+    hec_endpoint               = ""https://http-inputs-mydomain.splunkcloud.com:443""
+    hec_token                  = ""51D4DA16-C61B-4F5F-8EC7-ED4301342A4A""
+    hec_acknowledgment_timeout = 600
+    hec_endpoint_type          = ""Event""
+    s3_backup_mode             = ""FailedEventsOnly""
+
+    s3_configuration {
+      role_arn           = aws_iam_role.firehose_role.arn
+      bucket_arn         = aws_s3_bucket.januaryfifth.arn
+      buffering_size     = 10
+      buffering_interval = 400
+      compression_format = ""GZIP""
+    }
+  }
+}","Has one ""aws_iam_role"" resource, one ""aws_s3_bucket"" resource, and one ""aws_kinesis_firehose_delivery_stream"" resource with an ""splunk_configuration"" block"
+"aws_route53_record, aws_route53_zone, aws_vpc","Set up a non-alias aws_route_53 record that is linked to an aws_route53_zone resource called ""private_zone"" whose name paramter is set to ""internal.example53.com"" and has an aws_vpc resource called ""main"" attached to it","package terraform.validation
+
+default is_configuration_valid = false
+
+default is_valid_r53_zone = false
+
+default is_valid_r53_record = false
+
+default is_valid_vpc = false
+
+# Validate aws_vpc resource
+is_valid_vpc {
+        some i
+        resource := input.configuration.root_module.resources[i]
+        resource.type == ""aws_vpc""
+        resource.expressions.cidr_block != null
+}
+
+
+# Validate aws_route53_zone resource
+is_valid_r53_zone {
+	some i
+	resource := input.configuration.root_module.resources[i]
+    resource.type == ""aws_route53_zone""
+    resource.expressions.name.constant_value == ""internal.example53.com""
+    resource.expressions.vpc[0].vpc_id.references[0] == ""aws_vpc.main.id""
+}
+
+# Validate aws_route53_record
+is_valid_r53_record {
+	some i
+    resource := input.configuration.root_module.resources[i]
+    resource.type == ""aws_route53_record""
+    resource.expressions.name
+    resource.expressions.type
+    resource.expressions.ttl
+    resource.expressions.records
+    resource.expressions.zone_id.references[0] == ""aws_route53_zone.private_zone.zone_id""
+}
+
+
+# Combine all checks into a final rule
+is_configuration_valid {
+	is_valid_vpc
+    is_valid_r53_zone
+    is_valid_r53_record
+}",3,"provider ""aws"" {
+  region = ""us-east-1"" 
+}
+
+resource ""aws_vpc"" ""main"" {
+  cidr_block = ""10.0.0.0/16""
+  tags = {
+    Name = ""main-vpc""
+  }
+}
+
+resource ""aws_route53_zone"" ""private_zone"" {
+  name = ""internal.example53.com"" 
+
+  vpc {
+    vpc_id = aws_vpc.main.id  
+    }
+}
+
+
+resource ""aws_route53_record"" ""internal_record"" {
+  zone_id = aws_route53_zone.private_zone.zone_id
+  name    = ""api.internal.example53.com""
+  type    = ""A""
+  ttl     = ""300""
+  records = [""10.0.1.101""]  
+}","Has one ""aws_vpc"" resource
+    with a specified ""cidr_block""
+
+Has one ""aws_route53_zone"" resource
+    with ""name"" set to ""internal.example53.com""
+    with a ""vpc"" block that contains ""vpc_id"" that references the ""aws_vpc"" resource
+
+Has one ""aws_route53_record"" resource
+    with ""name""
+    with ""type""
+    with ""ttl""
+    with ""records""
+    with ""zone_id"" referencing the ""aws_route53_zone"" resource"
+"aws_s3_bucket, aws_s3_bucket_logging","Create a bucket ""example-bucket"". Then configure logging for the bucket to send access logs to another bucket named 'logging-680235478471' with a prefix of 'log/' in the target bucket.","package terraform.validation
+
+default has_s3_bucket = false
+
+default has_s3_bucket_logging = false
+
+default valid_configuration = false
+
+has_s3_bucket {
+    bucket := input.configuration.root_module.resources[_]
+    bucket.type == ""aws_s3_bucket""
+    bucket.name == ""example-bucket""
+}
+
+has_s3_bucket_logging {
+    logging := input.configuration.root_module.resources[_]
+    logging.type == ""aws_s3_bucket_logging""
+    logging.expression.bucket.constant_value == ""example-bucket""
+    logging.expression.target_bucket.constant_value == ""logging-680235478471""
+    logging.expression.target_prefix.constant_value == ""log/""
+}
+
+valid_configuration {
+    has_s3_bucket
+    has_s3_bucket_logging
+}
+",2,"provider ""aws"" {
+    region = ""us-east-1""
+}
+
+resource ""aws_s3_bucket"" ""example-bucket"" {
+  bucket = ""example-bucket""
+}
+
+resource ""aws_s3_bucket_logging"" ""example"" {
+  bucket        = ""example-bucket""
+  target_bucket = ""logging-680235478471""
+  target_prefix = ""log/""
+}","has one aws_s3_bucket resource
+with bucket
+
+has one aws_s3_bucket_logging resource
+with bucket
+with target_bucket
+with target_prefix"
+"aws_s3_bucket, aws_s3_bucket_object_lock_configuration",Create an AWS S3 bucket named 'example-bucket' with object lock enabled. Configure object lock governance mode with a retention period of 90 days for objects in the bucket.,"package terraform.validation
+
+default has_s3_bucket = false
+
+default has_s3_bucket_object_lock_configuration = false
+
+default valid_configuration = false
+
+
+has_s3_bucket {
+    bucket := input.planned_values.root_module.resources[_]
+    bucket.type == ""aws_s3_bucket""
+    bucket.name == ""example-bucket""
+}
+
+has_s3_bucket_object_lock_configuration {
+    lock_config := input.planned_values.root_module.resources[_]
+    lock_config.type == ""aws_s3_bucket_object_lock_configuration""
+    lock_config.values.bucket == ""example-bucket""
+    default_retention := lock_config.values.rule[_].default_retention[_]
+    default_retention.mode == ""GOVERNANCE""
+        default_retention.days == 90
+}
+
+valid_configuration {
+    has_s3_bucket
+    has_s3_bucket_object_lock_configuration
+}
+",2,"provider ""aws"" {
+    region = ""us-west-1""
+}
+
+resource ""aws_s3_bucket"" ""example"" {
+  bucket = ""example-bucket""
+}
+
+resource ""aws_s3_bucket_object_lock_configuration"" ""example"" {
+  bucket = aws_s3_bucket.example.bucket
+
+  rule {
+    default_retention {
+      mode  = ""GOVERNANCE""
+      days  = 90
+    }
+  }
+}","has one aws_s3_bucket resource
+with bucket
+
+has one aws_s3_bucket_object_lock_configuration resource
+with bucket
+with rule
+     with default_retention
+          with mode (GOVERNANCE or COMPLIANCE)
+          with days or years"
+"aws_dynamodb_table, aws_iam_role, aws_lambda_alias, aws_lambda_function, archive_file, aws_iam_policy_document",Create a Lambda function alias for aws_lambda_function,"package main
+
+import future.keywords.in
+
+default allow = false
+
+# Check for Lambda Function URL Resource
+aws_lambda_alias_valid(resources) {
+    some resource in resources
+    resource.type == ""aws_lambda_alias""
+}
+
+aws_lambda_function_valid(resources) {
+    some resource in resources
+    resource.type == ""aws_lambda_function""
+}
+
+# Aggregate all checks
+allow {
+    aws_lambda_alias_valid(input.resource_changes)
+    aws_lambda_function_valid(input.resource_changes)
+}",4,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 5.75""
+    }
+  }
+
+  required_version = ""~> 1.9.8""
+}
+
+
+provider ""aws"" {
+  region  = ""us-east-1""
+  profile = ""admin-1""
+
+  assume_role {
+    role_arn = ""arn:aws:iam::590184057477:role/yicun-iac""
+  }
+}
+
+resource ""aws_dynamodb_table"" ""example_table"" {
+  name           = ""example_table""
+  hash_key       = ""id""
+  read_capacity  = 10
+  write_capacity = 10
+
+  attribute {
+    name = ""id""
+    type = ""S""
+  }
+
+  # Enable DynamoDB Streams
+  stream_enabled   = true
+  stream_view_type = ""NEW_AND_OLD_IMAGES"" # Choose as per your requirement
+
+  # Other configurations for your table
+}
+
+data ""aws_iam_policy_document"" ""assume_role"" {
+  statement {
+    effect = ""Allow""
+
+    principals {
+      type        = ""Service""
+      identifiers = [""lambda.amazonaws.com""]
+    }
+
+    actions = [""sts:AssumeRole""]
+  }
+}
+
+resource ""aws_iam_role"" ""iam_for_lambda"" {
+  name               = ""iam_for_lambda""
+  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+}
+
+resource ""aws_iam_policy"" ""lambda_dynamodb_policy"" {
+  name   = ""lambda-dynamodb-policy""
+  policy = jsonencode({
+    Version = ""2012-10-17""
+    Statement = [
+      {
+        Action = [
+          ""dynamodb:GetItem"",
+          ""dynamodb:PutItem"",
+          ""dynamodb:UpdateItem"",
+          ""dynamodb:DeleteItem""
+        ]
+        Effect   = ""Allow""
+        Resource = aws_dynamodb_table.example_table.arn
+      }
+    ]
+  })
+}
+
+resource ""aws_iam_role_policy_attachment"" ""lambda_policy_attach"" {
+  role       = aws_iam_role.iam_for_lambda.name
+  policy_arn = aws_iam_policy.lambda_dynamodb_policy.arn
+}
+
+data ""archive_file"" ""lambda"" {
+  type        = ""zip""
+  source_file = ""./supplement/app.js""
+  output_path = ""./supplement/app.zip""
+}
+
+resource ""aws_lambda_function"" ""example_lambda"" {
+  filename      = data.archive_file.lambda.output_path
+  function_name = ""lambda_app_function""
+  source_code_hash = data.archive_file.lambda.output_base64sha256
+  role          = aws_iam_role.iam_for_lambda.arn
+  handler       = ""app.handler""
+  runtime       = ""nodejs18.x""
+}
+
+resource ""aws_lambda_alias"" ""test_lambda_alias"" {
+  name             = ""my_alias""
+  description      = ""a sample description""
+  function_name    = aws_lambda_function.example_lambda.arn
+  function_version = ""$LATEST""
+}","Needs to have an aws_lambda_function defined (IAM role, zip). Use aws_lambda_alias (need name, function_name, function_version)"
+"aws_cloudwatch_composite_alarm, aws_cloudwatch_metric_alarm",Create a CloudWatch Composite Alarm resource.,"package main
+
+import future.keywords.in
+
+default allow = false
+
+# Check if AWS CloudWatch Composite Alarm is being created
+aws_cloudwatch_composite_alarm_valid(resources) {
+    some resource in resources
+    resource.type == ""aws_cloudwatch_composite_alarm""
+}
+
+# Aggregate all checks
+allow {
+    aws_cloudwatch_composite_alarm_valid(input.resource_changes)
+}",2,"resource ""aws_cloudwatch_composite_alarm"" ""example"" {
+  alarm_name        = ""example-composite-alarm""
+
+  alarm_rule = <<EOF
+ALARM(${aws_cloudwatch_metric_alarm.foobar.alarm_name})
+EOF
+
+}
+
+resource ""aws_cloudwatch_metric_alarm"" ""foobar"" {
+  alarm_name                = ""terraform-test-foobar5""
+  comparison_operator       = ""GreaterThanOrEqualToThreshold""
+  evaluation_periods        = ""2""
+  metric_name               = ""CPUUtilization""
+  namespace                 = ""AWS/EC2""
+  period                    = ""120""
+  statistic                 = ""Average""
+  threshold                 = ""80""
+  alarm_description         = ""This metric monitors ec2 cpu utilization""
+  insufficient_data_actions = []
+}",Creates an aws_cloudwatch_composite_alarm which requires at least one other aws_cloudwatch_metric_alarm
+"aws_iam_role, aws_lambda_function, archive_file, aws_iam_policy_document","Create an AWS Lambda function. The function should be triggered by a nodejs18 runtime,use a ""lambda.js"" as the source code and a ""index.js"" as the handler. Please declare all necessary resources.","package main
+
+import future.keywords.in
+
+default allow = false
+
+# Check for IAM Role for Lambda
+aws_iam_role_for_lambda_valid(resources) {
+    some resource in resources
+    resource.type == ""aws_iam_role""
+}
+
+# Check for AWS Lambda Function with specific configurations
+aws_lambda_function_valid(resources) {
+    some resource in resources
+    resource.type == ""aws_lambda_function""
+    resource.change.after.runtime == ""nodejs18.x""
+    resource.change.after.handler == ""index.test""
+    resource.change.after.filename == ""lambda_function_payload.zip""
+}
+
+# Check for Archive File for Lambda code
+archive_file_for_lambda_valid(resources) {
+    some resource in resources
+    resource.type == ""archive_file""
+    resource.values.source_file == ""lambda.js""
+    resource.values.type == ""zip""
+}
+
+# Aggregate all checks
+allow {
+    aws_iam_role_for_lambda_valid(input.resource_changes)
+    aws_lambda_function_valid(input.resource_changes)
+    archive_file_for_lambda_valid(input.prior_state.values.root_module.resources)
+}
+",3,"data ""aws_iam_policy_document"" ""assume_role"" {
+  statement {
+    effect = ""Allow""
+
+    principals {
+      type        = ""Service""
+      identifiers = [""lambda.amazonaws.com""]
+    }
+
+    actions = [""sts:AssumeRole""]
+  }
+}
+
+resource ""aws_iam_role"" ""iam_for_lambda"" {
+  name               = ""iam_for_lambda""
+  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+}
+
+data ""archive_file"" ""lambda"" {
+  type        = ""zip""
+  source_file = ""lambda.js""
+  output_path = ""lambda_function_payload.zip""
+}
+
+resource ""aws_lambda_function"" ""test_lambda"" {
+  filename      = ""lambda_function_payload.zip""
+  function_name = ""lambda_function_name""
+  role          = aws_iam_role.iam_for_lambda.arn
+  handler       = ""index.test""
+
+  runtime = ""nodejs18.x""
+}","Needs to have a defined IAM role. Data for a .zip file, with source file = lambda.js, function name can be anything. For the aws_lambda_function use the defined zip, function name, set handler to anything, and runtime to ""nodejs.18x"""
+"aws_instance, aws_ami",Create the latest Amazon Linux 2 AMI with cpu count= 2 and cores per threads per core= 2,"package main
+
+import future.keywords.in
+
+default allow = false
+
+allow {
+    check_aws_instance(input.resource_changes)
+}
+
+check_aws_instance(resources) {
+    some resource in resources
+    resource.type == ""aws_instance""
+    check_ami(resource)
+    check_cpu_options(resource)
+}
+
+check_ami(aws_instance) {
+    aws_instance.change.after.ami == ""ami-0591e1c6a24d08458""
+}
+
+check_cpu_options(aws_instance) {
+	aws_instance.change.after.cpu_core_count==2
+	aws_instance.change.after.cpu_threads_per_core==2
+}",3,"provider ""aws"" {
+  # Configure your AWS provider settings here
+  region = ""us-east-1""  # Update with your desired AWS region
+}
+
+data ""aws_ami"" ""latest_amazon_linux_2"" {
+  most_recent = true
+
+  owners = [""amazon""]
+
+  filter {
+    name   = ""name""
+    values = [""amzn2-ami-hvm-*-x86_64-gp2""]
+  }
+
+  filter {
+    name   = ""root-device-type""
+    values = [""ebs""]
+  }
+}
+
+resource ""aws_instance"" ""example_instance"" {
+  ami           = data.aws_ami.latest_amazon_linux_2.id
+  instance_type = ""t3.2xlarge""  # Update with your desired instance type
+
+  # Other instance configuration settings go here
+
+  cpu_core_count = 2
+  cpu_threads_per_core = 2
+}",create aws_ami resource with cpu_count = 2 and cores_per_thread=2
+aws_elasticache_user,authenticate a elasticache user with passwords,"package main
+
+import future.keywords.in
+
+default allow = false
+
+aws_elasticache_user_valid(resources) {
+    some resource in resources
+    resource.type == ""aws_elasticache_user""
+    resource.change.after.authentication_mode[_].type == ""password""
+}
+
+# Aggregate all checks
+allow {
+    aws_elasticache_user_valid(input.resource_changes)
+}",2,"resource ""aws_elasticache_user"" ""test"" {
+  user_id       = ""testUserId""
+  user_name     = ""testUserName""
+  access_string = ""on ~* +@all""
+  engine        = ""REDIS""
+
+  authentication_mode {
+    type      = ""password""
+    passwords = [""password1"", ""password2""]
+  }
+}","requires access string, engine = REDIS, user id and user name, authentication_mode {type= ""password"", passwords = [""password1"", ""password2""]}"
+aws_dynamodb_table,Create a DynamoDB with point-in-time recovery enabled.,"package main
+
+import future.keywords.in
+
+default allow = false
+
+# Check for DynamoDB table creation
+dynamodb_table_created(resources) {
+some resource in resources
+resource.type == ""aws_dynamodb_table""
+resource.change.actions[_] == ""create""
+}
+
+# Check if point-in-time recovery is enabled
+point_in_time_recovery_enabled(resource) {
+resource.type == ""aws_dynamodb_table""
+resource.change.after.point_in_time_recovery[_].enabled == true
+}
+
+# Aggregate checks for DynamoDB table with PITR
+allow {
+dynamodb_table_created(input.resource_changes)
+some resource in input.resource_changes
+point_in_time_recovery_enabled(resource)
+}",3,"terraform {
+required_providers {
+aws = {
+source = ""hashicorp/aws""
+version = ""~> 5.0""
+}
+}
+}
+
+# Configure the AWS Provider
+provider ""aws"" {
+region = ""us-east-1""
+}
+
+resource ""aws_dynamodb_table"" ""example"" {
+name = ""your-dynamodb-table-name""
+billing_mode = ""PAY_PER_REQUEST"" # Or ""PROVISIONED"" if you prefer provisioned capacity
+hash_key = ""id""
+attribute {
+name = ""id""
+type = ""S""
+}
+
+point_in_time_recovery {
+enabled = true # Set to true to enable point-in-time recovery
+}
+
+}","Has one ""aws_dynamodb_table"" resource
+with one ""point_in_time_recovery""
+with one ""enabled"" = true"
+aws_dynamodb_table,Configure a custom Time to Live (TTL) attribute for data expiration.,"package main
+
+import future.keywords.in
+
+default allow = false
+
+# Check for DynamoDB table creation or update
+dynamodb_table_modified(resources) {
+some resource in resources
+resource.type == ""aws_dynamodb_table""
+resource.change.actions[_] == ""create""
+}
+
+# Check if TTL is enabled with the correct attribute name
+ttl_configured(resource) {
+resource.type == ""aws_dynamodb_table""
+resource.change.after.ttl[_].enabled == true
+resource.change.after.ttl[_].attribute_name == ""custom_ttl_attribute""
+}
+
+# Allow if DynamoDB table is modified and TTL is configured correctly
+allow {
+dynamodb_table_modified(input.resource_changes)
+some resource in input.resource_changes
+ttl_configured(resource)
+}",2,"provider ""aws"" {
+region = ""us-east-1"" # Change to your desired AWS region
+}
+
+resource ""aws_dynamodb_table"" ""example"" {
+name = ""your-dynamodb-table-name""
+billing_mode = ""PAY_PER_REQUEST"" # Or ""PROVISIONED"" if you prefer provisioned capacity
+hash_key = ""id""
+attribute {
+name = ""id""
+type = ""S""
+}
+
+# Define other table settings as needed
+
+ttl {
+attribute_name = ""custom_ttl_attribute"" # Replace with your custom TTL attribute name
+enabled = true # Set to true to enable TTL on the table
+}
+}","Has one ""aws_dynamodb_table"" resource
+with one ""ttl""
+with one ""attribute_name"" = ""custom_ttl_attribute""
+with one ""enabled"" = true"
+"aws_s3_bucket, aws_s3_bucket_website_configuration",Create a S3 bucket and an example website configuration resource for the S3 bucket.,"package aws_s3_bucket_website
+import future.keywords.in
+
+default valid := false
+
+valid { # IF THE BUCKET IS REFERRED TO BY ID
+    some bucket in input.configuration.root_module.resources
+    bucket.type == ""aws_s3_bucket""
+
+    some website in input.configuration.root_module.resources
+    website.type == ""aws_s3_bucket_website_configuration""
+
+    bucket.address in website.expressions.bucket.references
+}
+
+valid { # IF THE BUCKET IS REFFERED TO BY NAME
+    some bucket in input.configuration.root_module.resources
+    bucket.type == ""aws_s3_bucket""
+
+    some website in input.configuration.root_module.resources
+    website.type == ""aws_s3_bucket_website_configuration""
+
+    website.expressions.bucket.constant_value == bucket.expressions.bucket.constant_value
+}
+",2,"resource ""aws_s3_bucket"" ""example"" {
+  bucket = ""mybucket""
+}
+
+resource ""aws_s3_bucket_website_configuration"" ""example"" {
+  bucket = aws_s3_bucket.example.id
+}","Has an aws_s3_bucket
+
+Has an aws_s3_bucket_website_configuration
+with bucket = bucket id OR name"
+"aws_s3_bucket, aws_s3_bucket_request_payment_configuration",Create a S3 bucket and an example payment configuration resource for the S3 bucket with the bucket owner paying for fees.,"package aws_s3_bucket_payment_config
+import future.keywords.in
+
+default valid := false
+
+valid { # IF THE BUCKET IS REFERRED TO BY ID
+        some bucket in input.configuration.root_module.resources
+        bucket.type == ""aws_s3_bucket""
+
+        some payment_config in input.configuration.root_module.resources
+        payment_config.type == ""aws_s3_bucket_request_payment_configuration""
+        payment_config.expressions.payer.constant_value == ""BucketOwner""
+
+        bucket.address in payment_config.expressions.bucket.references
+}
+
+valid { # IF THE BUCKET IS REFFERED TO BY NAME
+        some bucket in input.configuration.root_module.resources
+        bucket.type == ""aws_s3_bucket""
+
+        some payment_config in input.configuration.root_module.resources
+        payment_config.type == ""aws_s3_bucket_request_payment_configuration""
+        payment_config.expressions.payer.constant_value == ""BucketOwner""
+        
+        payment_config.expressions.bucket.constant_value == bucket.expressions.bucket.constant_value
+}",2,"resource ""aws_s3_bucket"" ""example"" {
+  bucket = ""mybucket""
+}
+
+resource ""aws_s3_bucket_request_payment_configuration"" ""example"" {
+  bucket = aws_s3_bucket.example.id
+  payer  = ""BucketOwner""
+}","Has an aws_s3_bucket
+
+Has an aws_s3_bucket_request_payment_configuration
+with bucket = bucket id OR name
+with payer = ""BucketOwner"""
+"aws_s3_bucket, aws_s3_bucket_versioning",Create a S3 bucket and an example versioning resource for the S3 bucket.,"package aws_s3_bucket_versioning
+import future.keywords.in
+
+default valid := false
+
+valid { # IF THE BUCKET IS REFERRED TO BY ID
+    some bucket in input.configuration.root_module.resources
+    bucket.type == ""aws_s3_bucket""
+
+    some versioning in input.configuration.root_module.resources
+    versioning.type == ""aws_s3_bucket_versioning""
+
+    bucket.address in versioning.expressions.bucket.references
+}
+
+valid { # IF THE BUCKET IS REFFERED TO BY NAME
+    some bucket in input.configuration.root_module.resources
+    bucket.type == ""aws_s3_bucket""
+
+    some versioning in input.configuration.root_module.resources
+    versioning.type == ""aws_s3_bucket_versioning""
+    
+    versioning.expressions.bucket.constant_value == bucket.expressions.bucket.constant_value
+}",2,"resource ""aws_s3_bucket"" ""example"" {
+  bucket = ""example-bucket""
+}
+
+resource ""aws_s3_bucket_versioning"" ""versioning_example"" {
+  bucket = aws_s3_bucket.example.id
+  versioning_configuration {
+    status = ""Enabled""
+  }
+}","Has an aws_s3_bucket
+
+Has an aws_s3_bucket_versioning
+with bucket = bucket id OR name"
+"aws_backup_plan, aws_backup_selection, aws_backup_vault, aws_iam_role, aws_iam_role_policy_attachment, aws_instance, aws_key_pair, aws_ami, aws_iam_policy_document","An AWS EC2 key pair resource with public_key argument specified with a path to key file being ""./key.pub"". An AWS EC2 instance with the amazon linux 2023 x86-64 machine image with a key_name argument specified by the key pair resource and ""t2.micro"" instance_type. An AWS Backup plan resource, a rule argument block with a schedule of every day midnight, and an target_vault_name argument linking to the Backup vault resource, a lifecycle argument block with delete_after 7 days, and an advanced_back_up_setting argument block to specify the resource_type that is being backed up. A backup vault to use for the backup, and a backup selection according to the backup plan that backs up the EC2 instance. An IAM role for the backup selection, with an attached policy with ARN ""arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"".","package cloud_desktop
+
+import rego.v1
+
+default valid := false
+
+backup_plan_valid(backup_plan, backup_vault) if {
+	# advanced_backup_setting
+	some backup_setting in backup_plan.expressions.advanced_backup_setting
+	backup_setting.backup_options.constant_value.WindowsVSS == ""enabled""
+
+	backup_setting.resource_type.constant_value == ""EC2""
+
+	# rule
+	some rule in backup_plan.expressions.rule
+	backup_vault.address in rule.target_vault_name.references
+	some lifecycle in rule.lifecycle
+	lifecycle.delete_after.constant_value == 7
+	rule.schedule.constant_value == ""cron(0 0 * * ? *)""
+}
+
+backup_selection_valid(backup_selection, backup_plan, instance) if {
+	backup_plan.address in backup_selection.expressions.plan_id.references
+	instance.address in backup_selection.expressions.resources.references
+}
+
+instance_valid(instance, ami, key_pair) if {
+	instance.expressions.instance_type.constant_value == ""t2.micro""
+	key_pair.address in instance.expressions.key_name.references
+	ami.address in instance.expressions.ami.references
+}
+
+ami_valid(ami) if {
+	some filter in ami.expressions.filter
+	""al2023-ami-2023.*-x86_64"" in filter.values.constant_value
+	""amazon"" in ami.expressions.owners.constant_value
+}
+
+valid if {
+	resources := input.configuration.root_module.resources
+	some backup_plan in resources
+	backup_plan.type == ""aws_backup_plan""
+	some backup_vault in resources
+	backup_vault.type == ""aws_backup_vault""
+	some backup_selection in resources
+	backup_selection.type == ""aws_backup_selection""
+	some instance in resources
+	instance.type == ""aws_instance""
+	some key_pair in resources
+	key_pair.type == ""aws_key_pair""
+	some ami in resources
+	ami.type == ""aws_ami""
+
+	backup_plan_valid(backup_plan, backup_vault)
+	backup_selection_valid(backup_selection, backup_plan, instance)
+	instance_valid(instance, ami, key_pair)
+	ami_valid(ami)
+}",5,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 5.75""
+    }
+  }
+
+  required_version = ""~> 1.9.8""
+}
+
+provider ""aws"" {
+  region = ""us-east-1""
+  profile = ""admin-1""
+
+  assume_role {
+    role_arn = ""arn:aws:iam::590184057477:role/yicun-iac""
+  }
+}
+
+data ""aws_ami"" ""amzn-linux-2023-ami"" {
+  most_recent = true
+  owners      = [""amazon""]
+
+  filter {
+    name   = ""name""
+    values = [""al2023-ami-2023.*-x86_64""]
+  }
+}
+
+resource ""aws_key_pair"" ""cloud_desktop"" {
+  public_key = file(""./supplement/key.pub"")
+}
+
+resource ""aws_instance"" ""cloud_desktop"" {
+  ami           = data.aws_ami.amzn-linux-2023-ami.id
+  instance_type = ""t2.micro""
+  key_name      = aws_key_pair.cloud_desktop.key_name
+}
+
+resource ""aws_backup_plan"" ""cloud_desktop_backup"" {
+  name = ""cloud_desktop_backup_plan""
+  rule {
+    rule_name         = ""cloud_desktop_backup_rule""
+    target_vault_name = aws_backup_vault.valut.name
+    schedule          = ""cron(0 0 * * ? *)""
+
+    lifecycle {
+      delete_after = 7
+    }
+  }
+
+  advanced_backup_setting {
+    backup_options = {
+      WindowsVSS = ""enabled""
+    }
+    resource_type = ""EC2""
+  }
+}
+
+resource ""aws_backup_vault"" ""valut"" {
+  name = ""cloud_desktop_backup_valut""
+}
+
+resource ""aws_backup_selection"" ""backup_ec2"" {
+  iam_role_arn = aws_iam_role.backup.arn
+
+  name    = ""backup_ec2""
+  plan_id = aws_backup_plan.cloud_desktop_backup.id
+
+  resources = [
+    aws_instance.cloud_desktop.arn,
+  ]
+}
+
+data ""aws_iam_policy_document"" ""backup_assume_role"" {
+  statement {
+    effect = ""Allow""
+
+    principals {
+      type        = ""Service""
+      identifiers = [""backup.amazonaws.com""]
+    }
+
+    actions = [""sts:AssumeRole""]
+  }
+}
+
+resource ""aws_iam_role"" ""backup"" {
+  name               = ""backup""
+  assume_role_policy = data.aws_iam_policy_document.backup_assume_role.json
+}
+
+resource ""aws_iam_role_policy_attachment"" ""backup"" {
+  policy_arn = ""arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup""
+  role       = aws_iam_role.backup.name
+}","have one ""aws_ami"" resource
+  with ""filter"" argument block
+    with ""name"" argument
+    with ""values"" argument with value ""al2023-ami-2023.*-x86_64""
+have one ""aws_key_pair"" resource
+  with ""public_key"" argument
+have one ""aws_instance"" resource
+  with ""ami"" argument linking to ami resource
+  with ""instance_type"" argument with value ""t2.micro""
+  with ""key_name"" argument linking to key_pair resource
+have one ""aws_backup_plan"" resource
+  with ""name"" argument
+  with ""rule"" argument block
+    with ""rule_name"" argument
+    with ""target_vault_name"" argument linking to backup_vault
+    with ""schedule"" argument with value ""cron(0 0 * * ? *)""
+  with ""lifecycle"" argument block
+    with ""delete_after"" argument with value 7
+  with ""advanced_backup_setting"" argument block
+    with ""backup_options"" argument block
+      with ""WindowsVSS"" argument with value ""enabled""
+    with ""resource_type"" argument with value ""EC2""
+have one ""aws_backup_vault"" resource
+  with ""name"" argument
+have one ""aws_backup_selection"" resource
+  with ""iam_role_arn"" argument
+  with ""name"" argument
+  with ""plan_id"" argument linking to aws_backup_plan resource
+  with ""resources"" argument including the aws_instance resource"
+"aws_cloudwatch_event_rule, aws_cloudwatch_event_target, aws_iam_role, aws_iam_role_policy_attachment, aws_lambda_function, aws_lambda_permission, aws_iam_policy_document",An AWS service that runs a code everyday at 7 UTC. Accomplish this using AWS EventBridge.,"package job_scheduler_high
+
+import rego.v1
+
+lambda_permission_valid(lambda_permission, lambda, rule) if {
+	lambda_permission.expressions.action.constant_value == ""lambda:InvokeFunction""
+	lambda_permission.expressions.principal.constant_value == ""events.amazonaws.com""
+	lambda.address in lambda_permission.expressions.function_name.references
+	rule.address in lambda_permission.expressions.source_arn.references
+}
+
+target_valid(target, lambda, rule) if {
+	lambda.address in target.expressions.arn.references
+	rule.address in target.expressions.rule.references
+}
+
+lambda_valid(lambda, role) if {
+	role.address in lambda.expressions.role.references
+	lambda.expressions.function_name
+	lambda.expressions.filename
+	lambda.expressions.handler
+	lambda.expressions.runtime
+}
+
+rule_valid(rule, role) if {
+	role.address in rule.expressions.role_arn.references
+
+	rule.expressions.schedule_expression.constant_value == ""cron(0 7 * * ? *)""
+}
+
+default valid := false
+
+valid if {
+	resources := input.configuration.root_module.resources
+
+	some rule in resources
+	rule.type == ""aws_cloudwatch_event_rule""
+
+	some role in resources
+	role.type == ""aws_iam_role""
+
+	some target in resources
+	target.type == ""aws_cloudwatch_event_target""
+
+	some lambda in resources
+	lambda.type == ""aws_lambda_function""
+
+	some lambda_permission in resources
+	lambda_permission.type == ""aws_lambda_permission""
+
+	rule_valid(rule, role)
+	lambda_valid(lambda, role)
+	target_valid(target, lambda, rule)
+	lambda_permission_valid(lambda_permission, lambda, rule)
+}",5,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 5.75""
+    }
+  }
+
+  required_version = ""~> 1.9.8""
+}
+
+provider ""aws"" {
+  region = ""us-east-1""
+  profile = ""admin-1""
+
+  assume_role {
+    role_arn = ""arn:aws:iam::590184057477:role/yicun-iac""
+  }
+}
+
+resource ""aws_cloudwatch_event_rule"" ""cron"" {
+  schedule_expression = ""cron(0 7 * * ? *)""
+
+  role_arn = aws_iam_role.cron.arn
+}
+
+resource ""aws_cloudwatch_event_target"" ""cron"" {
+  rule = aws_cloudwatch_event_rule.cron.name
+  arn  = aws_lambda_function.cron.arn
+}
+
+data ""archive_file"" ""lambda-func"" {
+  type        = ""zip""
+  source_file = ""./supplement/lambda_func.py""
+  output_path = ""./supplement/lambda_func.zip""
+}
+
+resource ""aws_lambda_function"" ""cron"" {
+  function_name = ""cron-lambda-function""
+  role          = aws_iam_role.cron.arn
+  filename      = data.archive_file.lambda-func.output_path
+  source_code_hash = data.archive_file.lambda-func.output_base64sha256
+  handler       = ""lambda_func.handler""
+  runtime       = ""python3.12""
+}
+
+resource ""aws_lambda_permission"" ""cron"" {
+  function_name = aws_lambda_function.cron.function_name
+  action        = ""lambda:InvokeFunction""
+  principal     = ""events.amazonaws.com""
+  source_arn    = aws_cloudwatch_event_rule.cron.arn
+}
+
+data ""aws_iam_policy_document"" ""cron_assume_role"" {
+  statement {
+    actions = [""sts:AssumeRole""]
+    principals {
+      type = ""Service""
+      identifiers = [
+        ""lambda.amazonaws.com"",
+        ""events.amazonaws.com""
+      ]
+    }
+  }
+}
+
+resource ""aws_iam_role"" ""cron"" {
+  name               = ""cron_assume_role""
+  assume_role_policy = data.aws_iam_policy_document.cron_assume_role.json
+}
+
+resource ""aws_iam_role_policy_attachment"" ""cron"" {
+  role       = aws_iam_role.cron.name
+  policy_arn = ""arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole""
+}","have one ""aws_cloudwatch_event_rule"" resource
+    with ""schedule_expression"" argument with value ""cron(0 7 * * ? *)""
+have one ""aws_cloudwatch_event_target"" resource
+    with ""rule"" argument
+    with ""arn"" argument
+have one ""aws_lambda_function"" resource
+    with ""function_name"" argument
+    with ""role"" argument
+    with ""filename"" argument
+    with ""handler"" argument
+    with ""runtime"" argument
+have one ""aws_lambda_permission"" resource
+    with ""function_name"" argument with value aws_lambda_function.cron.function_name
+    with ""action"" argument with value ""lambda:InvokeFunction""
+    with ""principal"" argument with value ""events.amazonaws.com""
+    with ""source_arn"" argument with value aws_cloudwatch_event_rule.cron.arn"
+"aws_cloudwatch_event_rule, aws_cloudwatch_event_target, aws_iam_role, aws_iam_role_policy_attachment, aws_lambda_function, aws_lambda_permission, archive_file, aws_iam_policy_document","An AWS EventBridge event rule named ""cron"" with a schedule_expression argument with a cron expression to specify a schedule of everyday at 7 UTC. An AWS EventBridge event target linking to the event rule resource. An AWS Lambda function resource named ""cron"" with a function_name argument of value ""cron-lambda-function"", a filename argument of value ""./supplement/lambda_func.zip"", a handler argument of value ""lambda_func.lambda_handler"", and a runtime argument with value ""python3.12"". An AWS Lambda permission resource with a function_name argument linking to the lambda function resource function_name, an action argument with value ""lambda:InvokeFunction"", a principle argument with value ""events.amazonaws.com"", and a source_arn argument linking to the EventBridge event rule.","package job_scheduler
+
+import rego.v1
+
+policy_doc_valid(policy_doc, role) if {
+        policy_doc.address in role.expressions.assume_role_policy.references
+
+        some clause in policy_doc.expressions.statement
+        ""sts:AssumeRole"" in clause.actions.constant_value
+        some principal in clause.principals
+        principal.type.constant_value == ""Service""
+        ""lambda.amazonaws.com"" in principal.identifiers.constant_value
+        ""events.amazonaws.com"" in principal.identifiers.constant_value
+}
+
+lambda_permission_valid(lambda_permission, lambda, rule) if {
+        lambda_permission.expressions.action.constant_value == ""lambda:InvokeFunction""
+        lambda_permission.expressions.principal.constant_value == ""events.amazonaws.com""
+        lambda.address in lambda_permission.expressions.function_name.references
+        rule.address in lambda_permission.expressions.source_arn.references
+}
+
+target_valid(target, lambda, rule) if {
+        lambda.address in target.expressions.arn.references
+        rule.address in target.expressions.rule.references
+}
+
+policy_attachment_valid(policy_attachment, role) if {
+        execution_role_arn := ""arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole""
+
+        policy_attachment.expressions.policy_arn.constant_value == execution_role_arn
+        role.address in policy_attachment.expressions.role.references
+}
+
+lambda_valid(lambda, role) if {
+        role.address in lambda.expressions.role.references
+        lambda.expressions.function_name.constant_value == ""cron-lambda-function""
+        lambda.expressions.filename.constant_value == ""cron.zip""
+        lambda.expressions.handler.constant_value == ""cron.lambda_handler""
+        lambda.expressions.runtime.constant_value == ""python3.12""
+}
+
+rule_valid(rule, role) if {
+        role.address in rule.expressions.role_arn.references
+
+        rule.expressions.schedule_expression.constant_value == ""cron(0 7 * * ? *)""
+}
+
+default valid := false
+
+valid if {
+        resources := input.configuration.root_module.resources
+
+        some rule in resources
+        rule.type == ""aws_cloudwatch_event_rule""
+
+        some role in resources
+        role.type == ""aws_iam_role""
+
+        some target in resources
+        target.type == ""aws_cloudwatch_event_target""
+
+        some policy_doc in resources
+        policy_doc.type == ""aws_iam_policy_document""
+
+        some policy_attachment in resources
+        policy_attachment.type == ""aws_iam_role_policy_attachment""
+
+        some lambda in resources
+        lambda.type == ""aws_lambda_function""
+
+        some lambda_permission in resources
+        lambda_permission.type == ""aws_lambda_permission""
+
+        rule_valid(rule, role)
+        lambda_valid(lambda, role)
+        policy_attachment_valid(policy_attachment, role)
+        target_valid(target, lambda, rule)
+        lambda_permission_valid(lambda_permission, lambda, rule)
+        policy_doc_valid(policy_doc, role)
+}",5,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 5.75""
+    }
+  }
+
+  required_version = ""~> 1.9.8""
+}
+
+provider ""aws"" {
+  region = ""us-east-1""
+  profile = ""admin-1""
+
+  assume_role {
+    role_arn = ""arn:aws:iam::590184057477:role/yicun-iac""
+  }
+}
+
+resource ""aws_cloudwatch_event_rule"" ""cron"" {
+  schedule_expression = ""cron(0 7 * * ? *)""
+
+  role_arn = aws_iam_role.cron.arn
+}
+
+resource ""aws_cloudwatch_event_target"" ""cron"" {
+  rule = aws_cloudwatch_event_rule.cron.name
+  arn  = aws_lambda_function.cron.arn
+}
+
+data ""archive_file"" ""lambda-func"" {
+  type        = ""zip""
+  source_file = ""./supplement/lambda_func.py""
+  output_path = ""./supplement/lambda_func.zip""
+}
+
+resource ""aws_lambda_function"" ""cron"" {
+  function_name = ""cron-lambda-function""
+  role          = aws_iam_role.cron.arn
+  filename      = data.archive_file.lambda-func.output_path
+  source_code_hash = data.archive_file.lambda-func.output_base64sha256
+  handler       = ""lambda_func.handler""
+  runtime       = ""python3.12""
+}
+
+resource ""aws_lambda_permission"" ""cron"" {
+  function_name = aws_lambda_function.cron.function_name
+  action        = ""lambda:InvokeFunction""
+  principal     = ""events.amazonaws.com""
+  source_arn    = aws_cloudwatch_event_rule.cron.arn
+}
+
+data ""aws_iam_policy_document"" ""cron_assume_role"" {
+  statement {
+    actions = [""sts:AssumeRole""]
+    principals {
+      type = ""Service""
+      identifiers = [
+        ""lambda.amazonaws.com"",
+        ""events.amazonaws.com""
+      ]
+    }
+  }
+}
+
+resource ""aws_iam_role"" ""cron"" {
+  name               = ""cron_assume_role""
+  assume_role_policy = data.aws_iam_policy_document.cron_assume_role.json
+}
+
+resource ""aws_iam_role_policy_attachment"" ""cron"" {
+  role       = aws_iam_role.cron.name
+  policy_arn = ""arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole""
+}","have one ""aws_cloudwatch_event_rule"" resource
+    with ""schedule_expression"" argument with value ""cron(0 7 ** ? *)""
+have one ""aws_cloudwatch_event_target"" resource
+    with ""rule"" argument
+    with ""arn"" argument
+have one ""aws_lambda_function"" resource
+    with ""function_name"" argument with value ""cron-lambda-function""
+    with ""filename"" argument with value ""cron.zip""
+    with ""handler"" argument with value ""cron.lambda_handler""
+    with ""runtime"" argument with value ""python3.12""
+have one ""aws_lambda_permission"" resource
+    with ""function_name"" argument with value aws_lambda_function.cron.function_name
+    with ""action"" argument with value ""lambda:InvokeFunction""
+    with ""principal"" argument with value ""events.amazonaws.com""
+    with ""source_arn"" argument with value aws_cloudwatch_event_rule.cron.arn"
+aws_lightsail_instance,create AWS Lightsail with WordPress blueprint,"package terraform.validation
+
+default has_valid_lightsail_instance = false
+
+# Main rule to check for a valid aws_lightsail_instance
+has_valid_lightsail_instance {
+    resource := input.planned_values.root_module.resources[_]
+    resource.type == ""aws_lightsail_instance""
+    resource.values.name
+    resource.values.availability_zone
+    resource.values.blueprint_id == ""wordpress""
+    resource.values.bundle_id
+}",1,"provider ""aws"" {
+  region     = ""us-east-1""
+}
+
+resource ""aws_lightsail_instance"" ""custom"" {
+  name              = ""custom""
+  availability_zone = ""us-east-1b""
+  blueprint_id      = ""wordpress""
+  bundle_id         = ""nano_2_0""
+ }","have one ""aws_lightsail_instance"" resource
+with ""name"" argument
+with ""availability_zone"" argument
+with ""blueprint_id"" = wordpress
+with ""bundle_id"" argument"
+"aws_lightsail_disk, aws_lightsail_disk_attachment, aws_lightsail_instance, aws_availability_zones",Create a Lightsail Disk resource and attaches the Lightsail disk to a Lightsail Instance,"package terraform.validation
+
+default has_valid_lightsail_disk = false
+
+# Rule for aws_lightsail_disk resource with specific arguments
+has_valid_lightsail_disk {
+    some i
+    resource := input.planned_values.root_module.resources[i]
+    resource.type == ""aws_lightsail_disk""
+    resource.values.name
+    resource.values.size_in_gb
+    resource.values.availability_zone
+}",3,"data ""aws_availability_zones"" ""available"" {
+  state = ""available""
+
+  filter {
+    name   = ""opt-in-status""
+    values = [""opt-in-not-required""]
+  }
+}
+
+resource ""aws_lightsail_disk"" ""test"" {
+  name              = ""test-disk""
+  size_in_gb        = 8
+  availability_zone = data.aws_availability_zones.available.names[0]
+}
+
+resource ""aws_lightsail_instance"" ""test"" {
+  name              = ""test-instance""
+  availability_zone = data.aws_availability_zones.available.names[0]
+  blueprint_id      = ""amazon_linux_2""
+  bundle_id         = ""nano_1_0""
+}
+
+resource ""aws_lightsail_disk_attachment"" ""test"" {
+  disk_name     = aws_lightsail_disk.test.name
+  instance_name = aws_lightsail_instance.test.name
+  disk_path     = ""/dev/xvdf""
+}","have one aws_lightsail_disk resource
+    with name
+    with size_in_gb
+    with availability_zone
+
+have one aws_lightsail_disk_attachment
+    with disk_name
+    with instance_name
+    with disk_path
+
+have one ""aws_lightsail_instance"" resource
+    with ""name"" argument
+    with ""availability_zone"" argument
+    with ""blueprint_id"" argument
+    with ""bundle_id"" argument"
+aws_efs_file_system,create a AWS EFS Using lifecycle policy,"package terraform.validation
+
+default is_valid_efs_file_system = false
+
+# Rule to check if a valid aws_efs_file_system exists
+is_valid_efs_file_system {
+    resource := input.configuration.root_module.resources[_]
+    resource.type == ""aws_efs_file_system""
+    resource.expressions.lifecycle_policy
+}",1,"resource ""aws_efs_file_system"" ""foo_with_lifecyle_policy"" {
+  creation_token = ""my-product""
+
+  lifecycle_policy {
+    transition_to_ia = ""AFTER_30_DAYS""
+  }
+}","Have one ""aws_efs_file_system"" resource"
+"aws_internet_gateway, aws_vpc","creates a VPC with a CIDR block, and an internet gateway in the AWS us-east-2 region, both tagged with names ""vpc"" and ""ig"" respectively.","package terraform.validation
+
+# Set default validation states
+default is_valid_vpc = false
+
+default is_valid_internet_gateway = false
+
+# Validate aws_vpc resource
+is_valid_vpc {
+        some i
+        resource := input.configuration.root_module.resources[i]
+        resource.type == ""aws_vpc""
+        resource.expressions.cidr_block.constant_value != null
+        resource.expressions.enable_dns_hostnames.constant_value == true
+        resource.expressions.tags != null
+}
+
+# Validate aws_internet_gateway resource
+is_valid_internet_gateway {
+        some i
+        resource := input.configuration.root_module.resources[i]
+        resource.type == ""aws_internet_gateway""
+        resource.expressions.vpc_id.references[0] == ""aws_vpc._.id""
+        resource.expressions.tags != null
+}
+",3,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 4.16""
+    }
+  }
+
+  required_version = "">= 1.2.0""
+}
+# Define the provider block for AWS
+provider ""aws"" {
+  region = ""us-east-2"" # Set your desired AWS region
+}
+
+resource ""aws_vpc"" ""_"" {
+  cidr_block           = ""10.0.0.0/16""
+  enable_dns_hostnames = true
+  tags = merge({
+    ""Name"" = ""vpc""
+  })
+}
+
+resource ""aws_internet_gateway"" ""_"" {
+  vpc_id = aws_vpc._.id
+  tags = merge({
+    ""Name"" = ""ig""
+  })
+}","Has one ""aws_vpc"" resource:
+with a specified ""cidr_block""
+with ""enable_dns_hostnames"" set to true
+
+Has one ""aws_internet_gateway"" resource:
+with ""vpc_id"" referencing the ""aws_vpc"" resource by its ID
+with a ""tags"" map that is not null, including at least a ""Name"" key with a value"
+"aws_codebuild_project, aws_iam_role, aws_s3_bucket","create a AWS codebuild project resource with example iam role, example GITHUB source, and a logs config","package terraform.validation
+
+import future.keywords.in
+
+default has_valid_resources = false
+
+# Rule for aws_iam_role resource
+has_valid_iam_role(resources) { 
+	some resource in resources 
+    resource.type == ""aws_iam_role"" 
+    contains(resource.change.after.assume_role_policy,""codebuild.amazonaws.com"") 
+} 
+
+has_valid_codebuild {
+	some i
+    resource := input.planned_values.root_module.resources[i]
+    resource.type == ""aws_codebuild_project""
+	resource.values.artifacts
+    resource.values.environment
+    resource.values.name
+    resource.values.logs_config[_].cloudwatch_logs[_]
+    resource.values.source[_].type == ""GITHUB""
+    role := input.configuration.root_module.resources[i]
+    role.expressions.service_role
+}
+
+has_valid_bucket {
+    some i
+    resource := input.planned_values.root_module.resources[i]
+    resource.type == ""aws_s3_bucket""
+    
+}
+
+
+has_valid_resources {
+	has_valid_iam_role(input.resource_changes)
+    has_valid_codebuild
+}",5,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 5.75""
+    }
+  }
+
+  required_version = ""~> 1.9.8""
+}
+
+provider ""aws"" {
+  region  = ""us-east-1""
+  profile = ""admin-1""
+
+  assume_role {
+    role_arn = ""arn:aws:iam::590184057477:role/yicun-iac""
+  }
+}
+
+
+resource ""aws_iam_role"" ""example5"" {
+  name = ""example5""
+
+  assume_role_policy = jsonencode({
+    Version = ""2012-10-17""
+    Statement = [
+      {
+        Action = ""sts:AssumeRole""
+        Effect = ""Allow""
+        Sid    = """"
+        Principal = {
+          Service = ""codebuild.amazonaws.com""
+        }
+      },
+    ]
+  })
+}
+
+resource ""aws_s3_bucket"" ""apriltwentynine"" {
+  bucket = ""apriltwentynine""
+}
+
+resource ""aws_codebuild_project"" ""example5"" {
+  name          = ""Row5CodeBuild""
+  description   = ""Row5CodeBuild""
+  build_timeout = 5
+  service_role  = aws_iam_role.example5.arn
+
+  artifacts {
+    type = ""NO_ARTIFACTS""
+  }
+
+  environment {
+    compute_type                = ""BUILD_GENERAL1_SMALL""
+    image                       = ""aws/codebuild/standard:7.0-24.10.29""
+    type                        = ""LINUX_CONTAINER""
+    image_pull_credentials_type = ""CODEBUILD""
+  }
+
+  logs_config {
+    cloudwatch_logs {
+      group_name  = ""log-group""
+      stream_name = ""log-stream""
+    }
+
+    s3_logs {
+      status   = ""ENABLED""
+      location = ""${aws_s3_bucket.apriltwentynine.id}/build-log""
+    }
+  }
+  
+  source {
+    type            = ""GITHUB""
+    location        = ""https://github.com/mitchellh/packer.git""
+    git_clone_depth = 1
+  }
+
+  source_version = ""master""
+}","Has one ""aws_iam_role"" resource, one ""aws_s3_bucket"" resource, and one ""aws_codebuild_project"" resource with the ""type"" argument within the ""source"" block equal to ""GITHUB"" and a ""logs_config"" block"
+"aws_s3_bucket, aws_s3_bucket_notification, aws_sns_topic, aws_iam_policy_document",Create an IAM policy document that allows the 's3.amazonaws.com' service to publish to an SNS topic for S3 event notifications. Specify the actions as 'SNS:Publish' and set the resource to the ARN of the SNS topic 's3-event-notification-topic'. Apply a condition to allow this action only if the source ARN is similar to the ARN of the specified S3 bucket. Create an SNS topic named 's3-event-notification-topic' with the generated IAM policy. Set up an S3 bucket named 'example-bucket' and configure it to send notifications to the SNS topic for 's3:ObjectCreated:*' events with a filter for '.log' suffix.,"package terraform.validation
+
+default has_aws_iam_policy_document_topic = false
+default has_aws_sns_topic = false
+default has_aws_s3_bucket = false
+default has_aws_s3_bucket_notification = false
+
+has_aws_iam_policy_document_topic {
+    policy := input.planned_values.root_module.resources[_]
+    policy.type == ""aws_iam_policy_document""
+}
+
+has_aws_sns_topic {
+    topic := input.planned_values.root_module.resources[_]
+    topic.type == ""aws_sns_topic""
+    topic.name == ""topic""
+    topic.values.name == ""s3-event-notification-topic""
+    topic.values.policy == input.planned_values.root_module.resources[_].values.json  # Validate policy is correctly used from data source
+}
+
+has_aws_s3_bucket {
+    bucket := input.planned_values.root_module.resources[_]
+    bucket.type == ""aws_s3_bucket""
+    bucket.name == ""bucket""
+    bucket.values.bucket == ""example-bucket""
+}
+
+has_aws_s3_bucket_notification {
+    notification := input.planned_values.root_module.resources[_]
+    notification.type == ""aws_s3_bucket_notification""
+    notification.name == ""bucket_notification""
+    notification.values.bucket == input.planned_values.root_module.resources[_].values.id  # Correct bucket ID reference
+    notification.values.topic.topic_arn == input.planned_values.root_module.resources[_].values.arn  # Correct topic ARN reference
+    notification.values.topic.events[0] == ""s3:ObjectCreated:*""
+    notification.values.topic.filter_suffix == "".log""
+}
+
+valid_configuration {
+    has_aws_iam_policy_document_topic
+    has_aws_sns_topic
+    has_aws_s3_bucket
+    has_aws_s3_bucket_notification
+}
+",3,"provider ""aws"" {
+    region = ""us-west-1""
+}
+
+data ""aws_iam_policy_document"" ""topic"" {
+  statement {
+    effect = ""Allow""
+
+    principals {
+      type        = ""Service""
+      identifiers = [""s3.amazonaws.com""]
+    }
+
+    actions   = [""SNS:Publish""]
+    resources = [""arn:aws:sns:*:*:s3-event-notification-topic""]
+
+    condition {
+      test     = ""ArnLike""
+      variable = ""aws:SourceArn""
+      values   = [aws_s3_bucket.bucket.arn]
+    }
+  }
+}
+resource ""aws_sns_topic"" ""topic"" {
+  name   = ""s3-event-notification-topic""
+  policy = data.aws_iam_policy_document.topic.json
+}
+
+resource ""aws_s3_bucket"" ""bucket"" {
+  bucket = ""example-bucket""
+}
+
+resource ""aws_s3_bucket_notification"" ""bucket_notification"" {
+  bucket = aws_s3_bucket.bucket.id
+
+  topic {
+    topic_arn     = aws_sns_topic.topic.arn
+    events        = [""s3:ObjectCreated:*""]
+    filter_suffix = "".log""
+  }
+}","Data ""aws_iam_policy_document""
+has one ""effect""
+has one ""principals"" 
+has one ""actions""
+has one ""resources""
+
+Resource ""aws_sns_topic"" 
+has one ""name""
+uses the JSON output
+
+Resource ""aws_s3_bucket"" 
+has one ""bucket""
+
+Resource ""aws_s3_bucket_notification"" 
+has one ""bucket""
+configures a ""topic"" notification with:
+""topic_arn""
+""events""
+""filter_suffix"""
+"aws_api_gateway_integration, aws_api_gateway_integration, aws_api_gateway_method, aws_api_gateway_method, aws_api_gateway_resource, aws_api_gateway_rest_api, aws_dynamodb_table, aws_iam_role, aws_iam_role, aws_lambda_function, aws_lambda_function, aws_lambda_permission, aws_lambda_permission, aws_s3_bucket","An AWS service that holds a web server which allows you to upload cat pictures and provides random cat pictures on demand. Accomplish this using the following resources: AWS DynamoDB table, AWS S3 bucket, AWS Lambda function, AWS Lambda permission, AWS API Gateway rest API, AWS API Gateway resource, AWS API Gateway method. Add any necessary resources.","package caas_middle
+
+import rego.v1
+
+api_valid(api) := true
+
+cat_valid(cat, api) if {
+	api.address in cat.expressions.parent_id.references
+	api.address in cat.expressions.rest_api_id.references
+}
+
+method_valid(method, method_string, resource, api) if {
+	method.expressions.http_method.constant_value == method_string
+	resource.address in method.expressions.resource_id.references
+	api.address in method.expressions.rest_api_id.references
+}
+
+table_valid(table) if {
+	some attribute in table.expressions.attribute
+	attribute.name
+	attribute.type
+
+	table.expressions.hash_key
+}
+
+lambda_valid(lambda, bucket) if {
+	some env in lambda.expressions.environment
+	bucket.address in env.variables.references
+}
+
+permission_valid(permission, lambda, api) if {
+	permission.expressions.action.constant_value == ""lambda:InvokeFunction""
+	lambda.address in permission.expressions.function_name.references
+	permission.expressions.principal.constant_value == ""apigateway.amazonaws.com""
+	api.address in permission.expressions.source_arn.references
+}
+
+integration_valid(integration, lambda, method, resource, api, integration_method) if {
+	method.address in integration.expressions.http_method.references
+	resource.address in integration.expressions.resource_id.references
+	api.address in integration.expressions.rest_api_id.references
+	integration.expressions.integration_http_method.constant_value == integration_method
+	integration.expressions.type.constant_value == ""AWS_PROXY""
+	lambda.address in integration.expressions.uri.references
+}
+
+default valid := false
+
+valid if {
+	resources := input.configuration.root_module.resources
+
+	some api in resources
+	api.type == ""aws_api_gateway_rest_api""
+
+	some cat in resources
+	cat.type == ""aws_api_gateway_resource""
+
+	some method_get in resources
+	method_get.type == ""aws_api_gateway_method""
+
+	some method_put in resources
+	method_put.type == ""aws_api_gateway_method""
+
+	some table in resources
+	table.type == ""aws_dynamodb_table""
+
+	some lambda_get in resources
+	lambda_get.type == ""aws_lambda_function""
+
+	some lambda_put in resources
+	lambda_put.type == ""aws_lambda_function""
+
+	some bucket in resources
+	bucket.type == ""aws_s3_bucket""
+
+	some permission_get in resources
+	permission_get.type == ""aws_lambda_permission""
+
+	some permission_put in resources
+	permission_put.type == ""aws_lambda_permission""
+
+	some integration_get in resources
+	integration_get.type == ""aws_api_gateway_integration""
+
+	some integration_put in resources
+	integration_put.type == ""aws_api_gateway_integration""
+
+	api_valid(api)
+	cat_valid(cat, api)
+	method_valid(method_get, ""GET"", cat, api)
+	method_valid(method_put, ""PUT"", cat, api)
+	lambda_valid(lambda_get, bucket, archive_get)
+	lambda_valid(lambda_put, bucket, archive_put)
+	permission_valid(permission_get, lambda_get, api)
+	permission_valid(permission_put, lambda_put, api)
+	integration_valid(integration_get, lambda_get, method_get, cat, api, ""GET"")
+	integration_valid(integration_put, lambda_put, method_put, cat, api, ""PUT"")
+}",6,"terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 5.75""
+    }
+  }
+
+  required_version = ""~> 1.9.8""
+}
+
+
+provider ""aws"" {
+  region  = ""us-east-1""
+  profile = ""admin-1""
+
+  assume_role {
+    role_arn = ""arn:aws:iam::590184057477:role/yicun-iac""
+  }
+}
+
+resource ""aws_dynamodb_table"" ""caas"" {
+  name           = ""cat_names""
+  hash_key       = ""name""
+  billing_mode   = ""PAY_PER_REQUEST""
+
+  attribute {
+    name = ""name""
+    type = ""S""
+  }
+}
+
+resource ""aws_s3_bucket"" ""caas"" {
+  bucket_prefix = ""cat-image""
+}
+
+resource ""aws_iam_role"" ""lambda_role"" {
+  name = ""lambda_api_gateway_role""
+
+  assume_role_policy = jsonencode({
+    Version = ""2012-10-17""
+    Statement = [
+      {
+        Action = ""sts:AssumeRole""
+        Effect = ""Allow""
+        Principal = {
+          Service = ""lambda.amazonaws.com""
+        }
+      }
+    ]
+  })
+}
+
+resource ""aws_iam_role_policy"" ""lambda_policy"" {
+  name   = ""lambda_policy""
+  role   = aws_iam_role.lambda_role.id
+  policy = jsonencode({
+    Version = ""2012-10-17""
+    Statement = [
+      {
+        Action = [
+          ""s3:GetObject"",
+          ""s3:PutObject""
+        ]
+        Effect   = ""Allow""
+        Resource = ""${aws_s3_bucket.caas.arn}/*""
+      },
+      {
+        Action = [
+          ""dynamodb:PutItem""
+        ]
+        Effect   = ""Allow""
+        Resource = aws_dynamodb_table.caas.arn
+      }
+    ]
+  })
+}
+
+resource ""aws_api_gateway_rest_api"" ""caas"" {
+  name = ""caas""
+}
+
+resource ""aws_api_gateway_resource"" ""caas_cat"" {
+  rest_api_id = aws_api_gateway_rest_api.caas.id
+  parent_id   = aws_api_gateway_rest_api.caas.root_resource_id
+  path_part   = ""cat""
+}
+
+resource ""aws_api_gateway_method"" ""caas_cat_get"" {
+  rest_api_id   = aws_api_gateway_rest_api.caas.id
+  resource_id   = aws_api_gateway_resource.caas_cat.id
+  http_method   = ""GET""
+  authorization = ""NONE""
+}
+
+resource ""aws_api_gateway_method"" ""caas_cat_put"" {
+  rest_api_id   = aws_api_gateway_rest_api.caas.id
+  resource_id   = aws_api_gateway_resource.caas_cat.id
+  http_method   = ""PUT""
+  authorization = ""NONE""
+}
+
+data ""archive_file"" ""caas_cat"" {
+  type        = ""zip""
+  source_file = ""./supplement/caas_cat.py""
+  output_path = ""./supplement/caas_cat.zip""
+}
+
+resource ""aws_lambda_function"" ""caas_cat"" {
+  function_name = ""caas_cat""
+  role          = aws_iam_role.lambda_role.arn
+  filename      = data.archive_file.caas_cat.output_path
+  source_code_hash = data.archive_file.caas_cat.output_base64sha256
+  handler       = ""caas_cat.handler""
+  runtime       = ""python3.12""
+
+  environment {
+    variables = {
+      CAAS_S3_BUCKET = ""${aws_s3_bucket.caas.id}""
+      DYNAMODB_TABLE_NAME = ""${aws_dynamodb_table.caas.id}""
+    }
+  }
+}
+
+resource ""aws_api_gateway_integration"" ""caas_cat_get"" {
+  rest_api_id             = aws_api_gateway_rest_api.caas.id
+  resource_id             = aws_api_gateway_resource.caas_cat.id
+  http_method             = aws_api_gateway_method.caas_cat_get.http_method
+  type                    = ""AWS_PROXY""
+  integration_http_method = ""GET""
+  uri                     = aws_lambda_function.caas_cat.invoke_arn
+}
+
+resource ""aws_api_gateway_integration"" ""caas_cat_put"" {
+  rest_api_id             = aws_api_gateway_rest_api.caas.id
+  resource_id             = aws_api_gateway_resource.caas_cat.id
+  http_method             = aws_api_gateway_method.caas_cat_put.http_method
+  type                    = ""AWS_PROXY""
+  integration_http_method = ""PUT""
+  uri                     = aws_lambda_function.caas_cat.invoke_arn
+}
+
+resource ""aws_lambda_permission"" ""caas_cat"" {
+  action        = ""lambda:InvokeFunction""
+  principal     = ""apigateway.amazonaws.com""
+  function_name = aws_lambda_function.caas_cat.function_name
+
+  source_arn = ""${aws_api_gateway_rest_api.caas.execution_arn}/*/*""
+}
+
+resource ""aws_api_gateway_deployment"" ""api_deployment"" {
+  rest_api_id = aws_api_gateway_rest_api.caas.id
+  depends_on  = [aws_api_gateway_integration.caas_cat_get, 
+                 aws_api_gateway_integration.caas_cat_put]
+}
+
+resource ""aws_api_gateway_stage"" ""api_stage"" {
+  deployment_id = aws_api_gateway_deployment.api_deployment.id
+  rest_api_id   = aws_api_gateway_rest_api.caas.id
+  stage_name    = ""dev""
+}
+
+output ""api_id"" {
+  value = aws_api_gateway_rest_api.caas.id
+  description = ""The API Gateway ID""
+}","have one ""aws_api_gateway_rest_api"" resource
+    with ""name"" argument
+have one ""aws_api_gateway_resource"" resource
+    with ""rest_api_id"" argument linking to aws_api_gateway_rest_api resource id
+    with ""parent_id"" argument linking to aws_api_gateway_rest_api resource root_resource_id
+    with ""path_part"" argument
+have two ""aws_api_gateway_method"" resources
+    with ""rest_api_id"" argument linking to aws_api_gateway_api resource id
+    with ""resource_id"" linking to aws_api_gateway_resource resource
+    with ""authorization"" argument
+    with ""http_method"" argument with values ""GET"" and ""PUT""
+have one ""aws_s3_bucket"" resource
+have one ""aws_dynamodb_table"" resource
+    with ""name"" argument
+    with ""hash_key"" argument
+    with ""attribute"" argument block
+        with ""name"" argument
+        with ""type"" argument
+with two ""aws_lambda_function"" resources
+    with ""function_name"" argument
+    with ""role"" argument
+    with ""environment"" argument block
+        with ""variables"" argument block linking to the aws_s3_bucket
+with two ""aws_lambda_permission"" resources
+    with ""action"" argument with value ""lambda:InvokeFunction""
+    with ""principal"" argument with value ""apigateway.amazonaws.com""
+    with ""function_name"" argument linking to aws_lambda_function resource
+    with ""source_arn"" argument linking to aws_api_gateway_rest_api (two different end points)
+with two ""aws_api_gateway_integration"" resources
+    with ""rest_api_id"" argument linking to aws_api_gateway_rest_api resource
+    with ""resource_id"" argument linking to aws_api_gateway_resource resource
+    with ""http_method"" argument linking to aws_api_gateway_method resource
+    with ""type"" argument with value ""AWS_PROXY""
+    with ""integration_http_method"" argument with values ""GET"" and ""PUT"""
