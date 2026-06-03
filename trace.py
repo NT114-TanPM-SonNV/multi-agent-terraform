@@ -130,18 +130,23 @@ _AGENT_ROLE = {
         "  Nếu có fix_instruction từ vòng retry trước, A3 chỉ sửa đúng phần đó, giữ nguyên phần còn lại."
     ),
     "validation": (
-        "Kiểm tra HCL sinh bởi A3 qua 3 tầng độc lập:\n"
-        "  1. terraform validate   — cú pháp HCL có đúng không?\n"
-        "  2. terraform plan       — AWS provider có chấp nhận config này không?\n"
-        "  3. Checkov security gate — các CKV IDs mà A2 đã chọn có pass không?\n"
-        "     Scan trên plan JSON (terraform show -json) để chính xác hơn source scan.\n"
+        "Kiểm tra HCL sinh bởi A3 qua 4 bước tuần tự (bước sau chỉ chạy nếu bước trước pass):\n"
+        "  1. terraform init     — tải AWS provider plugin\n"
+        "  2. terraform validate — cú pháp HCL có đúng không?\n"
+        "  3. terraform plan     — AWS provider có chấp nhận config này không?\n"
+        "  4. Checkov gate       — các CKV IDs mà A2 đã chọn có pass không?\n"
+        "     (scan trên plan JSON từ terraform show -json — chính xác hơn source scan)\n"
         "  Nếu fail: phân loại lỗi, sinh fix_instruction, route về agent phù hợp."
     ),
     "deployment": (
-        "Chạy terraform apply để tạo resource thật trên AWS.\n"
-        "  Nếu fail: kiểm tra partial apply (terraform state list), destroy nếu dirty,\n"
-        "  phân loại lỗi (TRANSIENT/FIXABLE/MISSING_RESOURCE/UNKNOWN) rồi route.\n"
-        "  Nếu auto_destroy=True (chạy trong eval): destroy ngay sau apply thành công."
+        "Chạy terraform init + terraform apply để tạo resource thật trên AWS.\n"
+        "  Nếu apply fail: kiểm tra partial apply (terraform state list), destroy nếu dirty,\n"
+        "  phân loại lỗi rồi route:\n"
+        "    TRANSIENT        → retry A5 (network/throttle tạm thời)\n"
+        "    LOGIC            → A3 fix code rồi apply lại\n"
+        "    MISSING_RESOURCE → A1 re-plan (AWS resource phụ thuộc thiếu)\n"
+        "    OTHER            → requires_human (lỗi không xác định hoặc hết budget)\n"
+        "  Nếu auto_destroy=True (eval mode): terraform destroy ngay sau apply thành công."
     ),
     "requires_human": (
         "Pipeline không thể tự giải quyết — hết budget retry hoặc gặp lỗi không thể tự sửa.\n"
@@ -257,12 +262,11 @@ def _explain_input(node: str, state: dict) -> None:
     elif node == "security":
         plan = state.get("infrastructure_plan") or {}
         resources = plan.get("resources", [])
-        _note("→ A2 không đọc prompt trực tiếp, chỉ đọc infrastructure_plan mà A1 đã phân tích")
+        _note("→ A2 đọc cả prompt lẫn infrastructure_plan để hiểu intent + biết resource type")
+        _item("state['prompt']", state.get("prompt", "")[:120], color=dim)
+        print()
         _item("state['infrastructure_plan']['resources']",
               f"{len(resources)} resources: " + ", ".join(f"{r.get('type')}.{r.get('name')}" for r in resources))
-        print()
-        _note("→ A2 cũng đọc prompt để hiểu intent (e.g. 'public API' → cần public access)")
-        _item("state['prompt']", state.get("prompt", "")[:120], color=dim)
 
     elif node == "engineering":
         plan = state.get("infrastructure_plan") or {}
@@ -540,7 +544,7 @@ def _explain_routing(node: str, update: dict, merged: dict) -> None:
                 _note("→ overall_passed=True dù có unmet_checks")
                 _note("   hết sec retry budget → A4 chấp nhận best-effort, không block deploy")
             else:
-                _note("→ overall_passed=True: cả 3 tầng kiểm tra đều pass")
+                _note("→ overall_passed=True: cả 4 bước kiểm tra đều pass")
             _arrow_next(node, "deployment", "HCL hợp lệ và an toàn → deploy thật lên AWS")
         else:
             _note(f"→ overall_passed=False, A4 cần route về agent phù hợp để sửa")
