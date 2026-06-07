@@ -4,15 +4,40 @@ Re-prompt in-node nếu plan có defect cấu trúc. Reset val_eng/deploy_eng/se
 mỗi re-plan vì code cũ không còn liên quan với lỗi mới.
 """
 import logging
+import json
+import re
+import time
 
 from core.state import AgentState
 from core.llm import call_llm
-from core.errors import make_fail
+from core.errors import make_fail, recent_fix_instructions
 from core.parsers import parse_llm_json
 from core.retry_control import new_tracker
 from prompts.architecture import SYSTEM_PROMPT, DEFECT_FIX, ARCH_FIX_HEADER, ARCH_PREV_ATTEMPTS
 
 logger = logging.getLogger(__name__)
+
+_MAX_LLM_TRANSIENT_RETRY = 1
+_LLM_TRANSIENT_BACKOFF = 2
+_MAX_PLAN_REPAIR_RETRY = 2
+_LLM_TRANSIENT_HINTS = (
+    "connection error",
+    "apiconnectionerror",
+    "timeout",
+    "timed out",
+    "proxyerror",
+    "rate limit",
+    "too many requests",
+    "temporarily unavailable",
+    "service unavailable",
+    "502",
+    "503",
+    "504",
+)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HELPERS: Parse & Validate plan JSON
+# ──────────────────────────────────────────────────────────────────────────────
 
 
 def _parse_plan(raw: str) -> dict:
@@ -59,6 +84,84 @@ def _plan_defects(plan: dict) -> list[str]:
     return defects
 
 
+_REF_RE = re.compile(r"^REF:(data\.)?([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\.[A-Za-z0-9_]+$")
+_PLACEHOLDER_RE = re.compile(r"\b(todo|tbd|replace[_ -]?me|your[_ -]?(?:value|id|arn|name))\b", re.I)
+
+def _walk_values(value):
+    if isinstance(value, dict):
+        for v in value.values():
+            yield from _walk_values(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _walk_values(v)
+    else:
+        yield value
+
+
+def _semantic_plan_defects(plan: dict) -> list[str]:
+    """Lightweight consistency checks. LLM still performs the correction."""
+    defects: list[str] = []
+    res_labels = {f"{r.get('type')}.{r.get('name')}" for r in plan.get("resources", [])}
+    data_labels = {f"data.{d.get('type')}.{d.get('name')}" for d in plan.get("data_sources", [])}
+
+    for section in ("resources", "data_sources"):
+        for obj in plan.get(section, []):
+            if not isinstance(obj, dict):
+                continue
+            label = f"{'data.' if section == 'data_sources' else ''}{obj.get('type')}.{obj.get('name')}"
+            for value in _walk_values({"attributes": obj.get("attributes", {}), "blocks": obj.get("blocks", {})}):
+                if value is None:
+                    defects.append(f"{label} contains null; use a concrete deployable value or omit the argument")
+                    continue
+                if not isinstance(value, str):
+                    continue
+                if _PLACEHOLDER_RE.search(value):
+                    defects.append(f"{label} contains placeholder value '{value}'")
+                m = _REF_RE.match(value)
+                if m:
+                    target = f"data.{m.group(2)}.{m.group(3)}" if m.group(1) else f"{m.group(2)}.{m.group(3)}"
+                    if target not in data_labels and target not in res_labels:
+                        defects.append(f"{label} has unresolved reference {value}")
+
+    return defects
+
+
+def _is_transient_llm_error(error: Exception) -> bool:
+    text = f"{type(error).__name__}: {error}".lower()
+    return any(hint in text for hint in _LLM_TRANSIENT_HINTS)
+
+
+def _call_architecture_llm(messages: list[dict]) -> str:
+    """Call the architecture LLM with one extra transient retry outside call_llm()."""
+    last_error: Exception | None = None
+    for attempt in range(_MAX_LLM_TRANSIENT_RETRY + 1):
+        try:
+            return call_llm(messages, agent="architecture")
+        except Exception as e:
+            last_error = e
+            if attempt >= _MAX_LLM_TRANSIENT_RETRY or not _is_transient_llm_error(e):
+                raise
+            time.sleep(_LLM_TRANSIENT_BACKOFF * (attempt + 1))
+    assert last_error is not None
+    raise last_error
+
+
+def _fail_architecture(fix_instruction: str, error_label: str, error_stage: str,
+                       *, error_type: str = "INFRASTRUCTURE", raw_error: str | None = None) -> dict:
+    logger.warning("Archi agent: FAIL %s [%s/%s]", error_type, error_stage, error_label)
+    result = make_fail(error_type, None, fix_instruction)
+    fb = result["fix_feedback"]
+    fb["error_label"] = error_label
+    fb["error_stage"] = error_stage
+    if raw_error:
+        fb["raw_error"] = raw_error[:2000]
+    return result
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MAIN LOGIC: LLM prompt + retry
+# ──────────────────────────────────────────────────────────────────────────────
+
 def architecture_node(state: AgentState) -> dict:
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -69,9 +172,8 @@ def architecture_node(state: AgentState) -> dict:
     fix_instruction = fix_feedback.get("fix_instruction", "")
     if fix_instruction and fix_feedback.get("root_cause") == "architecture":
         fix_msg = ARCH_FIX_HEADER.format(fix_instruction=fix_instruction)
-        past = [e.get("fix_instruction", "")[:400]
-                for e in state["arch_error_history"][-2:]
-                if e.get("fix_instruction") and e.get("fix_instruction") != fix_instruction]
+        past = recent_fix_instructions(state["arch_error_history"], max_chars=400,
+                                       exclude=fix_instruction)
         if past:
             fix_msg += ARCH_PREV_ATTEMPTS + "\n".join(f"- {p}" for p in past)
         messages.append({"role": "user", "content": fix_msg})
@@ -79,13 +181,17 @@ def architecture_node(state: AgentState) -> dict:
         logger.debug("Archi: fix_instruction ignored (root_cause=%s)", fix_feedback.get("root_cause"))
 
     try:
-        raw = call_llm(messages, agent="architecture")
+        raw = _call_architecture_llm(messages)
         plan = _parse_plan(raw)
     except Exception as e:
-        return make_fail("INFRASTRUCTURE", None, f"Archi agent error: {e}")
+        msg = str(e).lower()
+        label = "LLM_TRANSIENT" if _is_transient_llm_error(e) else ("INVALID_JSON" if "json" in msg or "parse" in msg else "LLM_ERROR")
+        return _fail_architecture(f"Archi agent error: {e}", label, "initial", raw_error=str(e))
 
-    defects = _plan_defects(plan)
-    if defects:
+    defects = _plan_defects(plan) + _semantic_plan_defects(plan)
+    for repair_round in range(_MAX_PLAN_REPAIR_RETRY):
+        if not defects:
+            break
         logger.warning("Archi agent: %d defect — re-prompt: %s", len(defects), defects[:5])
         retry_msgs = messages + [
             {"role": "assistant", "content": raw},
@@ -93,13 +199,20 @@ def architecture_node(state: AgentState) -> dict:
                 defects="\n".join(f"- {d}" for d in defects))},
         ]
         try:
-            raw = call_llm(retry_msgs, agent="architecture")
+            raw = _call_architecture_llm(retry_msgs)
             plan = _parse_plan(raw)
         except Exception as e:
-            return make_fail("INFRASTRUCTURE", None, f"Archi agent retry error: {e}")
-        defects = _plan_defects(plan)
-        if defects:
-            return make_fail("INFRASTRUCTURE", None, f"Plan still has defects after retry: {defects[:3]}")
+            msg = str(e).lower()
+            label = "REPAIR_LLM_TRANSIENT" if _is_transient_llm_error(e) else ("INVALID_JSON" if "json" in msg or "parse" in msg else "REPAIR_LLM_ERROR")
+            return _fail_architecture(f"Archi agent retry error: {e}", label, "repair", raw_error=str(e))
+        defects = _plan_defects(plan) + _semantic_plan_defects(plan)
+    if defects:
+        return _fail_architecture(
+            f"Plan still has defects after retry: {defects[:3]}",
+            "PLAN_REPAIR_EXHAUSTED",
+            "repair",
+            raw_error="; ".join(defects[:5]),
+        )
 
     logger.info("Archi agent: %d resources, %d data_sources",
                 len(plan["resources"]), len(plan["data_sources"]))

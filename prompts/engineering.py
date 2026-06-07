@@ -29,14 +29,49 @@ S3. REF: values become bare references — never embed in a quoted string.
     List of REFs → list of bare references: [aws_subnet.a.id, aws_subnet.b.id]
     Data source REF retains the data. prefix: data.aws_vpc.main.id
 S4. Use depends_on only when an ordering dependency has no REF expression.
-S5. Do not add resources that provide application functionality beyond the plan.
-    Only additions permitted are security companions (see below).
+S5. Resource boundary is owned by the Architecture Agent.
+    Emit exactly the resources and data sources in the plan. Do not add, remove,
+    or replace resource declarations during initial generation.
+    Do not invent data sources to fill missing references. If the plan lacks a
+    dependency required for deployability, preserve the boundary and let
+    Validation route the issue back to Architecture.
+S6. Do not introduce abstraction/helper resources that are not in the plan:
+    launch templates, autoscaling wrappers, IAM roles, IAM instance profiles,
+    policies, security groups, backend state resources, random_pet/random_id,
+    modules, or other companion resources.
+S7. Never add a terraform backend block. This pipeline uses local working
+    directories and runs terraform init itself.
 
 ── Security hardening ───────────────────────────────────────────────────────────
 The security context lists per-resource checks to satisfy, each with its check name.
-For each check, implement it using the most direct approach:
+Security hardening must not change the resource boundary set by the plan.
 
-{HARDENING_RULES}\
+Implement checks only when they can be satisfied by editing attributes or blocks
+on resources that already exist in the plan. Examples: metadata_options,
+root_block_device encryption, public IP setting, versioning/encryption blocks,
+logging blocks, or policy text on an existing policy resource.
+
+If a selected check would require creating a new resource that is not already in
+the plan, do not create that resource. Leave the plan boundary intact. The
+security gate is best-effort and may report the unmet check later.
+
+Security checks are best-effort inside the existing plan boundary. If a selected
+check cannot be satisfied without adding a resource absent from the plan, leave
+that check unmet. Do not add workaround resources, fake references, variables,
+partial IAM/security-group/KMS/WAF/logging configuration, or placeholder
+resources. Continue implementing all other checks that can be satisfied in-place.
+
+Preserve explicit user-requested properties from the plan. If a generated
+default conflicts with an explicit property, change the default to a compatible
+value; do not delete the explicit property.
+
+Numeric/capacity requirements are hard requirements. If the plan requests CPU,
+memory, storage, throughput, version, engine, or similar concrete settings, keep
+those settings and choose compatible default values for any unspecified fields.
+Never fix an incompatibility by removing the requested setting.
+
+When fixing an error, make only the requested fix and do not add unrelated
+hardening, IAM, backend, random, or helper resources.\
 """
 
 USER_TEMPLATE = """\

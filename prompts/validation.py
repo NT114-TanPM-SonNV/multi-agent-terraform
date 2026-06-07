@@ -8,6 +8,12 @@ Output (raw JSON only):
   "fix_instruction": "<specific actionable instruction>"
 }
 
+── Note ──────────────────────────────────────────────────────────────
+SYNTAX: dùng cho plan error khi terraform config sai (backend, provider block)
+LOGIC: dùng cho plan error khi attribute/value sai
+MISSING_RESOURCE: dùng cho plan error khi resource/dependency boundary sai hoặc
+external data source lookup không tìm thấy object cần thiết
+
 ── Classification ────────────────────────────────────────────────────────────
 SYNTAX          HCL is structurally invalid: undeclared reference, missing required argument,
                 wrong block type, or invalid attribute name.
@@ -17,20 +23,55 @@ LOGIC           HCL passes validation but terraform plan fails: wrong attribute 
                 unsupported argument combination, or provider-level constraint.
                 → Use the plan error to identify the resource label and attribute.
 
-MISSING_RESOURCE  Plan failed because a resource type is entirely absent from the HCL —
-                not misconfigured, but never declared.
-                → Name the missing resource type and which existing resource depends on it.
+MISSING_RESOURCE  Plan failed because a required resource/dependency is absent from
+                the architecture boundary, or because a data source lookup for an
+                external object returned no match.
+                → Route this to Architecture when the fix requires changing a
+                data_source into a managed resource or adding a dependency to
+                the plan.
 
 ── fix_instruction rules ─────────────────────────────────────────────────────
-1. Always name the exact resource label (e.g. aws_db_instance.main).
-2. State the exact attribute or block to add/change and its value. When the fix
-   requires adding a new resource or block, include ALL required arguments with
-   concrete values — do not leave any required argument to be inferred. Incomplete
-   additions will fail in the next validation round and waste retry budget.
-3. MISSING_RESOURCE: name the resource type to add, which resource references it,
-   and ALL required arguments with concrete values.
-4. Only reference resource labels present in GENERATED HCL RESOURCES, except for MISSING_RESOURCE.
-5. Return ONLY raw JSON. No markdown, no explanation.\
+1. ANALYZE CONTEXT FIRST:
+   - Read "CURRENT HCL OF AFFECTED RESOURCE(S)" to see what exists now
+   - Read "ERROR HISTORY" to see what errors keep repeating
+   - Read "PREVIOUSLY ATTEMPTED FIXES" to avoid repeating failed fixes
+
+2. ALWAYS name the exact resource label (e.g. aws_db_instance.main).
+
+3. DETAILED ACTION: describe EXACTLY what to add/change:
+   - SYNTAX: which block/argument is wrong → show correct format with example
+   - LOGIC: which attribute has wrong value → show correct value and why
+   - MISSING_RESOURCE: resource/dependency boundary to change → explain whether
+     Architecture should add a managed resource or keep an explicit existing data source
+   - Do not invent required arguments that are not named by Terraform's error.
+
+4. CONTEXT MATTERS:
+   - For LOGIC: explain WHY the value is wrong (constraint, format, reference)
+   - For MISSING_RESOURCE: explain which existing resource depends on it, or
+     which data source lookup failed because the external object was absent
+   - Reference code context if available
+   - Preserve explicit user intent from ORIGINAL USER REQUEST and
+     INFRASTRUCTURE PLAN. If a plan attribute/block came from the user's
+     request, do not fix by deleting it. Fix the incompatible generated default
+     instead.
+   - Numeric/capacity/version settings from the user are hard requirements.
+     If they conflict with a generated default, instruct Engineering to change
+     the default to a compatible value rather than removing the requested
+     setting.
+   - If Terraform says an attribute is "unconfigurable", "computed", "read-only",
+     or "decided automatically", the fix is to remove that attribute, not to set
+     or keep it.
+   - Do not suggest setting provider-computed fields to make a plan pass.
+
+5. COMPLETENESS:
+   - Do NOT suggest incomplete fixes. Include ALL required arguments.
+   - Do NOT use placeholders like "your-value" — use concrete examples from context.
+   - If unsure, reference the error message for hints.
+
+6. AVOID REPETITION:
+   - Check "PREVIOUSLY ATTEMPTED FIXES" — if similar fix failed, suggest different approach.
+
+7. Return ONLY raw JSON. No markdown, no explanation.\
 """
 
 TOP_PROMPT = "Terraform configuration failed. Classify and fix:\n\n"
@@ -42,41 +83,15 @@ BOTTOM_PROMPT = "\nOutput JSON with error_type and fix_instruction only."
 # làm fix_instruction). Dữ liệu nội suy qua str.format — giá trị thay vào KHÔNG bị format
 # lại nên ngoặc {} trong HCL/JSON an toàn.
 
-# terraform validate fail → context phân loại SYNTAX.
-SYNTAX_CONTEXT = (
-    "TERRAFORM VALIDATE FAILED (fix EVERY error below in ONE revision):\n"
-    "{validate_err}\n\n"
-    "{code_context}"
-    "GENERATED HCL RESOURCES: {labels}\n"
-    "ERROR HISTORY (types only): {history}\n"
-    "{prev_fixes}"
-)
-# Khối code-context lồng vào SYNTAX_CONTEXT khi trích được (rỗng nếu không).
-FAILING_CODE_CONTEXT = (
-    "FAILING CODE CONTEXT (one block per error, '>>>' marks the line):\n{code_ctx}\n\n"
-)
-# Fallback fix khi LLM không sinh được fix cho lỗi validate.
-SYNTAX_FIX_FALLBACK = "terraform validate failed — fix ALL these errors: {err}"
-# fix_instruction khi terraform init fail vì lỗi trong HCL.
-INIT_FIX = "terraform init failed — fix the HCL:\n{err}"
-
-# terraform plan fail (validate đã passed) → context phân loại LOGIC/MISSING_RESOURCE.
+# NOTE: VALIDATE_FIX, SECURITY_FIX moved to agents/validation.py (agent templates, not LLM prompts)
+#
+# PLAN_CONTEXT: context data for LLM classify (still here as it's a prompt component)
 PLAN_CONTEXT = (
+    "ORIGINAL USER REQUEST:\n{prompt}\n\n"
+    "INFRASTRUCTURE PLAN:\n{plan}\n\n"
     "TERRAFORM VALIDATE: passed\nTERRAFORM PLAN: FAILED\n{plan_err}\n\n"
     "GENERATED HCL RESOURCES: {labels}\n"
     "{failing_resource_body}"
     "ERROR HISTORY (types only): {history}\n"
     "{prev_fixes}"
-)
-
-# Checkov pass nhưng còn security best-practice chưa đạt → fix_instruction gửi thẳng A3.
-# Mô tả NGÔN NGỮ NGƯỜI (tên check), không phải CKV ID → A3 implement tự nhiên theo schema.
-# Pool gồm CẢ check tier-0 (sửa in-place) LẪN graph tier-1 (companion: PAB/SSE/versioning).
-# Nhiều check provider ~> 5.0 (S3 encryption/versioning/public-access) CHỈ thỏa được bằng
-# resource companion riêng → KHÔNG cấm thêm block; bám ladder H1/H2/H4 của engineering.py:
-# ưu tiên in-place, thêm CONFIGURATION companion khi không biểu diễn in-place được, không
-# thêm service/functional resource ngoài item, không đụng phần không liên quan.
-SECURITY_FIX = (
-    "These security checks are not yet satisfied. Fix EACH item following your "
-    "hardening rules. Do not change anything unrelated:\n{items}"
 )
