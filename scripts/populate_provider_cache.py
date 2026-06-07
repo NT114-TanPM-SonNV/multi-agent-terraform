@@ -20,10 +20,16 @@ if sys.platform == "win32":
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
-# Provider cần cho dataset
+# Provider cần cho dataset. `local` được code sinh ra dùng nhiều (lambda zip, file
+# rendering) nhưng trước đây thiếu → terraform init fail "provider not found".
+# archive/tls/null: provider tiện ích LLM hay emit (lambda archive, TLS key, null_resource).
 PROVIDERS = {
     "aws": "~> 5.0",
     "random": "~> 3.0",
+    "local": "~> 2.0",
+    "archive": "~> 2.0",
+    "tls": "~> 4.0",
+    "null": "~> 3.0",
 }
 
 # Cache path (match core/terraform.py)
