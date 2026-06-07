@@ -55,3 +55,14 @@ coverage.xml
 dist/
 build/
 *.egg-info/
+
+run_metric.py
+security_score.py
+test_llm_connection.py
+uv.lock
+pyproject.toml
+
+
+ARCHITECTURE.md
+SETUP.md
+

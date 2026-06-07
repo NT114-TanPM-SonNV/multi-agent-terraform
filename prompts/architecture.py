@@ -47,9 +47,16 @@ Principles:
    similar concrete settings are hard requirements.
 8. Emit only valid, deployable values: no nulls, placeholders, fake IDs/ARNs, or
    values that violate target service naming constraints.
+9. Use ONLY resource/data source types that actually exist in the Terraform AWS
+   provider ~> 5.0. Never invent a type. A feature that is a NESTED BLOCK or
+   attribute of a resource (e.g. lifecycle_policy, versioning, logging, encryption)
+   MUST be expressed inside the parent resource's blocks/attributes — do NOT create
+   a separate resource for it.
 
 Before responding, verify privately:
 - every resource/data source has type, name, attributes, and blocks
+- every type is a real AWS provider ~> 5.0 type; no nested-block feature
+  (lifecycle / versioning / logging / encryption) is split into its own resource
 - every REF resolves
 - no duplicate type.name exists
 - the plan is the smallest deployable architecture that satisfies the request
