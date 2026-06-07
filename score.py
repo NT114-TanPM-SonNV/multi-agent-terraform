@@ -85,10 +85,13 @@ def _score_row(run_row: dict, gold: dict, do_rego: bool, do_checkov: bool,
         scored["semantic_correct"] = res["correct"]
         scored["_rego_stage"] = res["stage"]
 
-    if do_judge and code.strip():
-        from core.llm_judge import llm_judge_single
-        prompt = run_row.get("prompt") or gold.get("Prompt", "")
-        scored["llm_judge"] = llm_judge_single(prompt, code)
+    if do_judge:
+        if code.strip():
+            from core.llm_judge import llm_judge_single
+            prompt = run_row.get("prompt") or gold.get("Prompt", "")
+            scored["llm_judge"] = llm_judge_single(prompt, code)
+        else:
+            scored["llm_judge"] = 0  # không sinh được code = inadequate; giữ /N để cùng mẫu số với plan_valid
 
     # security_score = full Checkov pass-rate (HEADLINE; check_ids=None = grader độc lập, held-out
     # với A2 vốn Checkov-free). CHỈ credit khi code DEPLOY ĐƯỢC (≥ plan_valid): TF an toàn mà không
@@ -101,6 +104,8 @@ def _score_row(run_row: dict, gold: dict, do_rego: bool, do_checkov: bool,
             ck = run_checkov_on_hcl(code, timeout=90, check_ids=None)
             total = ck["passed_count"] + ck["failed_count"]
             scored["security_score"] = rate(ck["passed_count"], total) if total else None
+            scored["_ck_passed"] = ck["passed_count"]   # để tính aggregate (pooled) trong summary
+            scored["_ck_total"] = total
         except Exception as e:
             scored["_checkov_error"] = str(e)[:120]
 
@@ -130,7 +135,10 @@ def _summarize_run(scored_rows: list[dict], has_deploy: bool, has_rego: bool) ->
     sem_ok = sum(1 for r in sem_rows if r["semantic_correct"])
     judge_rows = [r for r in scored_rows if r.get("llm_judge") is not None]
     judge_ok = sum(1 for r in judge_rows if r["llm_judge"] == 1)
-    sec_vals = [r["security_score"] for r in scored_rows if r.get("security_score") is not None]
+    sec_rows = [r for r in scored_rows if r.get("security_score") is not None]
+    sec_vals = [r["security_score"] for r in sec_rows]
+    sec_agg_passed = sum(r.get("_ck_passed", 0) for r in sec_rows)
+    sec_agg_total = sum(r.get("_ck_total", 0) for r in sec_rows)
     elapsed_vals = [r["total_elapsed_s"] for r in scored_rows if r.get("total_elapsed_s") is not None]
     f1_vals = [r["resource_f1"] for r in scored_rows if r.get("resource_f1") is not None]
 
@@ -148,7 +156,10 @@ def _summarize_run(scored_rows: list[dict], has_deploy: bool, has_rego: bool) ->
         "llm_judge": rate(judge_ok, len(judge_rows)) if judge_rows else None,
         "llm_judge_n": len(judge_rows),
         "deploy_success": rate(deploy_ok, n) if has_deploy else None,
-        "security_score_mean": round(sum(sec_vals) / len(sec_vals), 4) if sec_vals else None,
+        "security_score": round(sum(sec_vals) / len(sec_vals), 4) if sec_vals else None,
+        "security_score_agg": round(sec_agg_passed / sec_agg_total, 4) if sec_agg_total else None,
+        "security_passed": sec_agg_passed,   # LƯỢNG tuyệt đối — coverage thật, không bị tỉ lệ giấu
+        "security_total": sec_agg_total,
         "security_n": len(sec_vals),
         # Tỷ lệ run mà A2 hỏng (LLM fail) → 0 security enforcement KHÔNG do intent.
         # Cao = kết quả security đang bị nhiễu bởi lỗi hạ tầng, cần điều tra trước khi tin số.
@@ -264,9 +275,10 @@ def main():
         if s.get("llm_judge") is not None:
             print(f"  llm_judge        : {s['llm_judge']:.3f}   "
                   f"[adequacy judge (deepseek-chat), n={s['llm_judge_n']}]")
-        if s["security_score_mean"] is not None:
-            print(f"  security_score   : {s['security_score_mean']:.3f}   "
-                  f"[full Checkov pass-rate trên code deploy-được — HEADLINE, n={s['security_n']}]")
+        if s["security_score"] is not None:
+            print(f"  security_score   : {s['security_score']:.3f} (mean) | "
+                  f"{s['security_score_agg']:.3f} (agg = {s['security_passed']}/{s['security_total']} checks pass)   "
+                  f"[n={s['security_n']}]")
         if s["deploy_success"] is not None:
             print(f"  deploy_success   : {s['deploy_success']:.3f}   [env-dependent]")
         if s.get("time_to_deploy_mean") is not None:

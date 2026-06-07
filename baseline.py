@@ -15,6 +15,7 @@ import argparse
 import csv
 import json
 import logging
+import os
 import re
 import subprocess
 import threading
@@ -169,7 +170,9 @@ def main():
     ap.add_argument("--cases",        nargs="+", default=None,
                     help="Row indices, e.g. --cases 0 1 2 5 7-10")
     ap.add_argument("--out",          default="reviews/baseline_b0.json")
-    ap.add_argument("--plan-timeout", type=int, default=120)
+    ap.add_argument("--plan-timeout", type=int,
+                    default=int(os.getenv("TF_PLAN_TIMEOUT", "120")),
+                    help="Mặc định = TF_PLAN_TIMEOUT trong .env (khớp pipeline graph.py:131)")
     ap.add_argument("--retry",        type=int, default=0,
                     help="Số lần repair tối đa: 0=B0 (no retry), 3=B1 (with retry)")
     ap.add_argument("--workers",      type=int, default=1,
