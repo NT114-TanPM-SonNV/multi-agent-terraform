@@ -24,7 +24,7 @@ from core.state import AgentState, RetryTracker
 
 # ── Retry budgets — single source of truth ────────────────────────────────────
 MAX_TOTAL_RETRY        = 5  # validation-phase backstop — dừng sau 5 fail của A1/A3/A4
-MAX_VAL_ENG_RETRY      = 3  # A4 → A3: nhiều hơn A5 vì validate rẻ hơn apply
+MAX_VAL_ENG_RETRY      = 2  # A4 → A3: nhiều hơn A5 vì validate rẻ hơn apply
 MAX_VAL_ARCH_RETRY     = 2  # A4 → A1: re-plan ít thôi, thường fix trong 1-2 lần
 MAX_VAL_SEC_RETRY      = 1  # security gate — cho A3 sửa 1 lần, sau đó best-effort deploy
 MAX_DEPLOY_ENG_RETRY   = 2  # A5 → A3: ít hơn A4 vì mỗi lần apply tốn tiền AWS
