@@ -21,7 +21,7 @@ from core.retry_control import (
     MAX_DEPLOY_TOTAL_RETRY, MAX_DEPLOY_ENG_RETRY, MAX_DEPLOY_ARCH_RETRY,
 )
 from core.errors import matches_any, MISSING_RESOURCE_PATTERNS, AUTH_PATTERNS, extract_error_facts, TRANSIENT_PATTERNS
-from core.destroy import patch_for_destroy, destroy_resources, _DESTROY_TIMEOUT
+from core.destroy import destroy_with_override, _DESTROY_TIMEOUT
 from prompts.deployment import SYSTEM_PROMPT as _SYSTEM_PROMPT
 from prompts.deployment import (
     TOP_PROMPT as _TOP, BOTTOM_PROMPT as _BOTTOM, CLASSIFY_CONTEXT,
@@ -273,7 +273,11 @@ def _run_apply_with_transient_retry(state: AgentState, tmpdir: str):
             break
 
         if _state_resources(tmpdir):
-            destroy_success, destroy_error = destroy_resources(tmpdir, timeout=_DESTROY_TIMEOUT)
+            destroy_success, destroy_error = destroy_with_override(
+                tmpdir,
+                state.get("generated_code", ""),
+                timeout=_DESTROY_TIMEOUT,
+            )
             if not destroy_success:
                 logger.warning(
                     "Agent 5: cannot clean partial apply before retry — %s",
@@ -323,7 +327,11 @@ def _handle_failure(
 
     # Cleanup partial state unconditionally
     partial = bool(created)
-    destroy_success, destroy_error = destroy_resources(tmpdir, timeout=_DESTROY_TIMEOUT)
+    destroy_success, destroy_error = destroy_with_override(
+        tmpdir,
+        state.get("generated_code", ""),
+        timeout=_DESTROY_TIMEOUT,
+    )
     partial_destroyed = destroy_success
     destroy_failed = not destroy_success and destroy_error is not None
 
@@ -413,8 +421,8 @@ def deployment_node(state: AgentState) -> dict:
          - Error (rc ≠ 0) → _handle_failure (cleanup partial + classify + route)
          - Success → always destroy (cleanup resources)
       4. Always destroy after apply success:
-         - Patch deletion protection attrs (skip_final_snapshot, deletion_protection, etc)
-         - terraform apply (patch reload to AWS)
+         - Write destroy_override.tf to disable deletion protection / final snapshot blockers
+         - terraform apply (override reload to AWS)
          - terraform destroy (timeout 600s for ElastiCache/RDS)
          - Return success with destroyed=True/False
 
@@ -454,25 +462,12 @@ def deployment_node(state: AgentState) -> dict:
         logger.info("Agent 5: APPLY OK — %d resources", len(created))
 
         # ── Always destroy (cleanup resources after apply success) ──────────
-        # Tại sao patch trước? Deletion protection chặn destroy API.
         logger.info("Agent 5: destroying resources (cleanup after apply)")
-        tf_path = Path(d) / "main.tf"
-        original = tf_path.read_text(encoding="utf-8")
-        patched = patch_for_destroy(original)
-        if patched != original:
-            logger.info("Agent 5: patching deletion-protection attrs before destroy")
-            tf_path.write_text(patched, encoding="utf-8")
-            # Re-apply patched code để AWS nhận thấy thay đổi attribute trước destroy
-            try:
-                run_terraform(
-                    ["terraform", "apply", "-auto-approve", "-no-color", "-parallelism=4"],
-                    d, _APPLY_TIMEOUT,
-                )
-            except subprocess.TimeoutExpired:
-                pass  # best-effort: thử destroy dù patch re-apply fail
-
-        # Destroy với timeout dài (ElastiCache/RDS cần 5-10 phút)
-        destroy_ok, destroy_err = destroy_resources(d, timeout=_DESTROY_TIMEOUT)
+        destroy_ok, destroy_err = destroy_with_override(
+            d,
+            code,
+            timeout=_DESTROY_TIMEOUT,
+        )
         if not destroy_ok:
             destroy_error = destroy_err or f"terraform destroy timed out (>{_DESTROY_TIMEOUT}s)"
             logger.warning("Agent 5: destroy FAILED — %s", destroy_error)
