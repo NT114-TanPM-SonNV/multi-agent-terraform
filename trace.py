@@ -12,7 +12,6 @@ Chạy:
     python trace.py --csv dataset/data-dev.csv --case 17
 """
 import argparse
-import csv
 import json
 import re
 import sys
@@ -27,7 +26,6 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 
-_DEFAULT_CSV = ROOT / "dataset" / "data-dev.csv"
 
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
@@ -42,6 +40,21 @@ for _n in ("httpx", "httpcore", "openai", "botocore", "boto3", "urllib3",
 
 from graph import build_initial_state, RECURSION_LIMIT
 from core.terraform import _safe_rmtree
+from core.eval_utils import (
+    BOLD,
+    DIM,
+    R,
+    blue,
+    bold,
+    cyan,
+    dim,
+    green,
+    load_trace_prompt,
+    magenta,
+    red,
+    white,
+    yellow,
+)
 from core.retry_control import (
     MAX_VAL_ARCH_RETRY, MAX_DEPLOY_ARCH_RETRY,
     MAX_VAL_ENG_RETRY,  MAX_DEPLOY_ENG_RETRY,
@@ -64,36 +77,7 @@ def _clean_trace_tf_dir(run_dir: Path) -> None:
     _safe_rmtree(run_dir / "tf")
 
 
-def _prompt_from_csv(csv_path: Path, row_index: int) -> tuple[str, str]:
-    """Read one prompt from dataset CSV by zero-based row index."""
-    with csv_path.open(encoding="utf-8", newline="") as f:
-        rows = list(csv.DictReader(f))
-    if row_index < 0 or row_index >= len(rows):
-        raise SystemExit(f"CSV row out of range: {row_index} (n={len(rows)})")
-    row = rows[row_index]
-    prompt = (row.get("Prompt") or "").strip()
-    if not prompt:
-        raise SystemExit(f"CSV row {row_index} has empty Prompt")
-    difficulty = row.get("Difficulty", "?")
-    return prompt, difficulty
-
-
 # ── ANSI ─────────────────────────────────────────────────────────────────────
-
-R = "\033[0m"
-BOLD = "\033[1m"
-DIM  = "\033[2m"
-
-def _c(code, s):  return f"{code}{s}{R}"
-def bold(s):      return _c(BOLD, s)
-def dim(s):       return _c(DIM, s)
-def green(s):     return _c("\033[92m", s)
-def red(s):       return _c("\033[91m", s)
-def yellow(s):    return _c("\033[93m", s)
-def blue(s):      return _c("\033[94m", s)
-def magenta(s):   return _c("\033[95m", s)
-def cyan(s):      return _c("\033[96m", s)
-def white(s):     return _c("\033[97m", s)
 
 _AGENT_COLORS = {
     "architecture":  ("\033[94m", "A1"),
@@ -767,7 +751,7 @@ if __name__ == "__main__":
         "--csv",
         type=Path,
         default=None,
-        help=f"Dataset CSV path (default: {_DEFAULT_CSV})",
+        help="Dataset CSV path (default: dataset/data-dev.csv)",
     )
     parser.add_argument(
         "--case",
@@ -792,7 +776,7 @@ if __name__ == "__main__":
         csv_path = args.csv
         if not csv_path.is_absolute():
             csv_path = ROOT / csv_path
-        prompt, difficulty = _prompt_from_csv(csv_path, args.case)
+        prompt, difficulty = load_trace_prompt(csv_path, args.case)
         print(f"Trace CSV row {args.case} | difficulty={difficulty} | csv={csv_path}")
     else:
         prompt = args.prompt or "Create an S3 bucket with versioning and server-side encryption."
