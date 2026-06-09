@@ -125,7 +125,7 @@ _LOCAL_FILE_PATTERNS = re.compile(
     r'filename\s*=\s*"([^"]+)"'                   # filename = "..."  (archive_file, lambda)
     r'|source_file\s*=\s*"([^"]+)"'               # source_file = "..."  (archive_file)
     r'|source_dir\s*=\s*"([^"]+)"'                # source_dir = "..."  (archive_file dir)
-    r'|source\s*=\s*"(\.{1,2}/[^"]+)"'            # source = "./..."  (local module/file only)
+    r'|source\s*=\s*"([^"${}:][^"]*\.[A-Za-z0-9][A-Za-z0-9._-]*)"'  # local source file path
     r'|(?:template|config)file?\s*=\s*"([^"]+)"'  # templatefile/configfile = "..."
     r'|templatefile\s*\(\s*"([^"]+)"'             # templatefile("...", vars)
     r'|filebase64sha256\s*\(\s*"([^"]+)"\s*\)'    # filebase64sha256("...")
@@ -135,6 +135,7 @@ _LOCAL_FILE_PATTERNS = re.compile(
     r'|file\s*\(\s*"([^"]+)"\s*\)'                # file("...")  — phải sau các file* cụ thể
     r')'
 )
+
 
 def _make_stub_pub_key() -> str:
     """Sinh OpenSSH RSA-2048 public key với wire format hợp lệ.
@@ -216,20 +217,57 @@ _STUB_ZIP_HANDLER = (
     "    return {'statusCode': 200, 'body': 'stub'}\n"
 )
 
+_STUB_ZIP_MAIN = (
+    "def lambda_handler(event, context):\n"
+    "    return {'statusCode': 200, 'body': 'stub'}\n"
+)
+
+_STUB_ZIP_INDEX_JS = (
+    "exports.handler = async (event) => ({ statusCode: 200, body: 'stub' });\n"
+)
+
 
 def _make_stub_zip() -> bytes:
+    """Create a deployable Lambda stub package with common handler entry points."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Covers handler = "handler.handler"
         zf.writestr("handler.py", _STUB_ZIP_HANDLER)
+        # Covers handler = "main.lambda_handler"
+        zf.writestr("main.py", _STUB_ZIP_MAIN)
+        # Covers handler = "index.handler" for Node.js runtimes
+        zf.writestr("index.js", _STUB_ZIP_INDEX_JS)
     return buf.getvalue()
 
 
+_STUB_BUILDSPEC = """version: 0.2
+phases:
+  build:
+    commands:
+      - echo stub build
+artifacts:
+  files:
+    - '**/*'
+"""
+
+
+def _stub_content_for_path(path: Path) -> bytes | str | None:
+    """Return path-aware stub content for files whose name matters."""
+    name = path.name.lower()
+    ext = path.suffix.lower()
+    if name in {"buildspec.yml", "buildspec.yaml"} or name.startswith("buildspec."):
+        return _STUB_BUILDSPEC
+    if name in {"package.json"}:
+        return '{"name":"stub","version":"1.0.0","main":"index.js"}\n'
+    return _STUB_CONTENT.get(ext, "")
+
+
 def _create_stub_file(path: Path, stub_zip: bytes) -> bytes | None:
-    """Tạo stub file phù hợp với extension. Trả về stub_zip bytes nếu vừa tạo.
+    """Tạo stub file phù hợp với extension/name. Trả về stub_zip bytes nếu vừa tạo.
 
     Extension không có trong _STUB_CONTENT → tạo file rỗng (fallback).
     Terraform cần file TỒN TẠI để file()/filebase64()/... không throw; content
-    chỉ quan trọng ở apply-time khi AWS validate (key format, cert format, v.v.).
+    chỉ quan trọng ở apply-time khi AWS validate (key format, buildspec, zip, v.v.).
     """
     ext = path.suffix.lower()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -240,15 +278,12 @@ def _create_stub_file(path: Path, stub_zip: bytes) -> bytes | None:
     elif ext == ".pub":
         # SSH public key cần wire format chuẩn — tạo mới mỗi lần (os.urandom modulus)
         path.write_text(_make_stub_pub_key(), encoding="utf-8")
-    elif ext in _STUB_CONTENT:
-        content = _STUB_CONTENT[ext]
+    else:
+        content = _stub_content_for_path(path)
         if isinstance(content, bytes):
             path.write_bytes(content)
         else:
-            path.write_text(content, encoding="utf-8")
-    else:
-        # Extension không biết — tạo file rỗng để terraform plan không fail vì thiếu file.
-        path.write_text("", encoding="utf-8")
+            path.write_text(content or "", encoding="utf-8")
     return stub_zip
 
 
@@ -274,8 +309,15 @@ def write_terraform_dir(tmpdir: str | Path, code: str,
     seen: set[str] = set()
     for m in _LOCAL_FILE_PATTERNS.finditer(code):
         raw = next(g for g in m.groups() if g)  # lấy group đầu tiên không None
-        if raw in seen or raw.startswith("${") or raw.startswith("http"):
-            continue  # bỏ qua Terraform interpolation và URL
+        if raw in seen:
+            continue
+        raw_l = raw.lower()
+        if (
+            raw.startswith("${")
+            or raw.startswith("/")
+            or raw_l.startswith(("http://", "https://", "s3://", "arn:"))
+        ):
+            continue  # bỏ qua interpolation, absolute paths, URLs, S3 URIs, and ARNs
         seen.add(raw)
         file_path = d / raw
         if file_path.exists():
