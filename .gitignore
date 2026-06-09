@@ -10,11 +10,6 @@ __pycache__/
 .env.*
 !.env.example
 
-# Claude Code / OpenWolf (internal tooling, không commit)
-CLAUDE.md
-.claude/
-.wolf/
-
 # Reference / local research / analysis docs (không commit)
 ref/
 docs/
@@ -56,13 +51,5 @@ dist/
 build/
 *.egg-info/
 
-run_metric.py
-security_score.py
-test_llm_connection.py
-uv.lock
-pyproject.toml
 
-
-ARCHITECTURE.md
-SETUP.md
-
+results/
