@@ -1,12 +1,13 @@
-"""Destroy helpers: cleanup terraform resources via destroy + patch deletion protection.
+"""Destroy helpers: cleanup terraform resources via destroy + destroy override file.
 
 Shared by A4 (validation cleanup) + A5 (deployment cleanup + eval auto-destroy).
-Pattern: patch deletion-protection attrs → terraform apply → terraform destroy.
+Pattern: write destroy_override.tf → terraform apply → terraform destroy.
 """
 import logging
 import re
 import subprocess
 import time
+from pathlib import Path
 
 from core.terraform import run_terraform
 from core.errors import matches_any, TRANSIENT_PATTERNS
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 _DESTROY_TIMEOUT = 600   # ElastiCache/RDS cần 5-10 phút để xóa
 _MAX_DESTROY_TRANSIENT_RETRY = 1  # Retry destroy nếu transient (network/throttle)
 _DESTROY_RETRY_BACKOFF = 5  # giây chờ giữa các lần retry
+_DESTROY_OVERRIDE_NAME = "destroy_override.tf"
 
 # Patch HCL trước khi destroy trong eval mode — tắt các attribute chặn delete API.
 # Thứ tự quan trọng: final_snapshot_identifier phải xử lý sau skip_final_snapshot.
@@ -50,6 +52,59 @@ def patch_for_destroy(code: str) -> str:
     return code
 
 
+def write_destroy_override(workdir: str | Path, code: str) -> Path | None:
+    """Write destroy_override.tf into the workdir if the code needs patching.
+
+    The main config is left untouched; Terraform loads the override file from the
+    same directory and applies the patched arguments during the destroy cleanup.
+    Returns the override path when created, otherwise None.
+    """
+    patched = patch_for_destroy(code)
+    if patched == code:
+        return None
+    override_path = Path(workdir) / _DESTROY_OVERRIDE_NAME
+    override_path.write_text(patched, encoding="utf-8")
+    return override_path
+
+
+def cleanup_destroy_override(workdir: str | Path) -> None:
+    """Remove destroy_override.tf if it was created."""
+    override_path = Path(workdir) / _DESTROY_OVERRIDE_NAME
+    try:
+        override_path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def destroy_with_override(
+    workdir: str | Path,
+    code: str,
+    timeout: int = _DESTROY_TIMEOUT,
+    max_retries: int = _MAX_DESTROY_TRANSIENT_RETRY,
+    backoff: int = _DESTROY_RETRY_BACKOFF,
+) -> tuple[bool, str | None]:
+    """Apply destroy overrides in-place, then run terraform destroy, then cleanup.
+
+    This keeps the apply workdir intact and avoids rewriting main.tf. The override
+    file is temporary and removed even when destroy fails.
+    """
+    override_path = write_destroy_override(workdir, code)
+    try:
+        if override_path is not None:
+            try:
+                run_terraform(
+                    ["terraform", "apply", "-auto-approve", "-no-color", "-parallelism=4"],
+                    workdir, timeout,
+                )
+            except subprocess.TimeoutExpired:
+                logger.warning("Destroy override apply timed out — continue to destroy")
+            except Exception as e:
+                logger.warning("Destroy override apply failed — continue to destroy: %s", e)
+        return destroy_resources(workdir, timeout=timeout, max_retries=max_retries, backoff=backoff)
+    finally:
+        cleanup_destroy_override(workdir)
+
+
 def destroy_resources(
     tmpdir: str,
     timeout: int = _DESTROY_TIMEOUT,
@@ -70,8 +125,7 @@ def destroy_resources(
     Returns:
         (success: bool, error_msg: str | None)
           - success=True → destroy thành công
-          - success=False + error_msg=None → timeout
-          - success=False + error_msg=<str> → non-transient error
+          - success=False + error_msg=<str> → timeout hoặc non-transient error
     """
     for attempt in range(max_retries + 1):
         if attempt > 0:
@@ -86,7 +140,9 @@ def destroy_resources(
             if attempt < max_retries:
                 logger.warning("Destroy timeout (attempt %d/%d) — retry", attempt + 1, max_retries + 1)
                 continue
-            return False, None  # timeout, no retry left
+            timeout_msg = f"terraform destroy timed out (>{timeout}s)"
+            logger.warning("Destroy FAILED: %s", timeout_msg)
+            return False, timeout_msg
 
         if destroy.returncode == 0:
             logger.info("Destroy OK")
