@@ -1,8 +1,4 @@
-"""Agent 2 — Security: chọn Checkov CKV IDs cần enforce cho từng resource.
-
-Menu per resource type grounding LLM về đúng IDs hợp lệ — không hallucinate.
-Fail không chặn pipeline: profile rỗng → A4 skip security gate (best-effort deploy).
-"""
+"""Agent 2: choose Checkov checks for each planned resource."""
 import json
 import logging
 from collections import defaultdict
@@ -16,14 +12,10 @@ from prompts.security import SYSTEM_PROMPT, USER_TEMPLATE, RETRY_MSG
 
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# CATALOG: Load Checkov IDs per resource type
-# ──────────────────────────────────────────────────────────────────────────────
-
 _CATALOG_FILE = Path(__file__).parent.parent / "core" / "catalog.json"
 
 def _load_catalog() -> dict[str, dict[str, list[dict]]]:
-    """catalog.json → {resource_type → {category → [check metadata]}}."""
+    """Load ``catalog.json`` into ``{resource_type: {category: [checks]}}``."""
     result: dict[str, dict[str, list[dict]]] = {}
     try:
         data = json.loads(_CATALOG_FILE.read_text(encoding="utf-8"))
@@ -57,16 +49,12 @@ def _valid_ids(rtype: str) -> frozenset[str]:
     return frozenset(c["id"] for entries in by_cat.values() for c in entries)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# HELPERS: Menu rendering & profile normalization
-# ──────────────────────────────────────────────────────────────────────────────
-
 def _has_any_type(plan_types: frozenset[str], types: tuple[str, ...] | list[str]) -> bool:
     return any(t in plan_types for t in types)
 
 
 def _is_safe_in_place_check(check: dict, plan_types: frozenset[str]) -> bool:
-    """Only filter checks whose catalog metadata explicitly names companion types."""
+    """Keep only checks whose companion resource types are present in the plan."""
     if check["mode"] == "requires_companion":
         return _has_any_type(plan_types, check.get("companions", []))
     return True
@@ -74,13 +62,7 @@ def _is_safe_in_place_check(check: dict, plan_types: frozenset[str]) -> bool:
 
 @lru_cache(maxsize=None)
 def _build_menu(rtype: str, plan_types: frozenset[str]) -> tuple[str, frozenset[str]]:
-    """Render menu text để inject vào prompt. Ví dụ:
-
-      ENCRYPTION:
-        CKV_AWS_19: Ensure all data stored in the S3 bucket is securely encrypted at rest
-      IAM:
-        CKV_AWS_70: Ensure S3 bucket does not allow an action with any Principal
-    """
+    """Render prompt menu text for one resource type."""
     by_cat = _CATALOG.get(rtype, {})
     if not by_cat:
         return "    (no applicable security checks for this resource type)", frozenset()
@@ -107,7 +89,7 @@ def _build_menu(rtype: str, plan_types: frozenset[str]) -> tuple[str, frozenset[
 
 
 def _compact_value(value, max_string: int = 300):
-    """Keep A2 plan context useful without letting very large literals dominate."""
+    """Trim very large literals so the prompt stays readable."""
     if isinstance(value, str):
         return value if len(value) <= max_string else value[:max_string] + "...(truncated)"
     if isinstance(value, list):
@@ -118,7 +100,7 @@ def _compact_value(value, max_string: int = 300):
 
 
 def _security_plan(plan: dict) -> dict:
-    """Full-enough plan for A2: resource shape, data sources, and explicit refs."""
+    """Return a compact but useful view of the infrastructure plan."""
     resources = []
     for r in plan.get("resources", []):
         rtype = r.get("type", "")
@@ -145,8 +127,8 @@ def _security_plan(plan: dict) -> dict:
 
 
 def _clean_profile(parsed: dict, resources: list[dict],
-                   allowed_by_label: dict[str, frozenset[str]] | None = None) -> dict[str, dict]:
-    """Normalize LLM output → profile. Drop IDs ngoài menu (hallucination)."""
+                   allowed_by_type: dict[str, frozenset[str]] | None = None) -> dict[str, dict]:
+    """Normalize LLM output and drop IDs not present in the menu."""
     out: dict[str, dict] = {}
     for r in resources:
         label = f"{r.get('type')}.{r.get('name')}"
@@ -155,7 +137,7 @@ def _clean_profile(parsed: dict, resources: list[dict],
         prof = parsed.get(label, {})
         raw_checks = prof.get("checks", []) if isinstance(prof, dict) else []
 
-        valid = allowed_by_label.get(label, frozenset()) if allowed_by_label is not None else _valid_ids(rtype)
+        valid = allowed_by_type.get(rtype, frozenset()) if allowed_by_type is not None else _valid_ids(rtype)
         checks = sorted(c for c in raw_checks if isinstance(c, str) and c in valid)
 
         out[label] = {"type": rtype, "checks": checks}
@@ -163,7 +145,7 @@ def _clean_profile(parsed: dict, resources: list[dict],
 
 
 def _count_raw_checks(parsed: dict) -> int:
-    """Count raw check IDs returned by the LLM before menu filtering."""
+    """Count raw check IDs before menu filtering."""
     total = 0
     for prof in parsed.values():
         raw_checks = prof.get("checks", []) if isinstance(prof, dict) else []
@@ -171,15 +153,10 @@ def _count_raw_checks(parsed: dict) -> int:
     return total
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# MAIN LOGIC: LLM prompt + menu + validation
-# ──────────────────────────────────────────────────────────────────────────────
-
 def security_node(state: AgentState) -> dict:
-    """LangGraph node — chọn security rules cho từng resource trong plan A1."""
+    """LangGraph node that selects security checks for each resource."""
     resources = state["infrastructure_plan"].get("resources", [])
     if not resources:
-        # Plan thật sự không có resource → không có gì để bảo vệ. KHÔNG phải degraded.
         return {"security_profile": {}, "security_status": "ok"}
 
     plan_types = frozenset(
@@ -189,7 +166,6 @@ def security_node(state: AgentState) -> dict:
         if obj.get("type")
     )
 
-    # Dedup menu: cùng type chỉ render 1 lần, liệt kê labels trên header.
     by_type: dict[str, list[str]] = defaultdict(list)
     for r in resources:
         rtype = r.get("type", "")
@@ -201,10 +177,6 @@ def security_node(state: AgentState) -> dict:
         allowed_by_type[rtype] = allowed
         menu_blocks.append(f"  {', '.join(labels)}:\n{menu}")
     menu_str = "\n".join(menu_blocks)
-    allowed_by_label = {
-        f"{r.get('type')}.{r.get('name')}": allowed_by_type.get(r.get("type", ""), frozenset())
-        for r in resources
-    }
 
     security_plan = _security_plan(state["infrastructure_plan"])
 
@@ -232,14 +204,14 @@ def security_node(state: AgentState) -> dict:
                     {"role": "user", "content": RETRY_MSG},
                 ]
             else:
-                logger.warning("Security agent failed: %s — checks=[] cho mọi resource", e)
-                profile = _clean_profile({}, resources, allowed_by_label)
+                logger.warning("Security agent failed: %s — returning empty checks", e)
+                profile = _clean_profile({}, resources, allowed_by_type)
                 return {"security_profile": profile, "security_status": "degraded"}
 
     if not isinstance(parsed, dict):
         parsed = {}
 
-    profile = _clean_profile(parsed, resources, allowed_by_label)
+    profile = _clean_profile(parsed, resources, allowed_by_type)
     raw_count = _count_raw_checks(parsed)
     kept_count = sum(len(info.get("checks", [])) for info in profile.values())
     if raw_count and kept_count == 0:

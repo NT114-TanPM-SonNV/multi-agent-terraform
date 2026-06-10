@@ -1,108 +1,45 @@
-"""Agent 3 — Engineering: JSON plan + security profile → Terraform HCL.
-
-Khi nhận fix_instruction: incremental patch (gửi code cũ + yêu cầu fix) thay vì
-rewrite từ đầu — tránh mất các edit security companion từ vòng trước.
-Strip <plan> tags (reasoning model chain-of-thought) và preamble text trước HCL.
-"""
+"""Agent 3: turn the plan and security profile into Terraform HCL."""
 import json
 import logging
 import re
-import time
 
 from core.state import AgentState
 from core.llm import call_llm
-from core.errors import make_fail, recent_fix_instructions
+from core.errors import build_fail_result, recent_fix_instructions
 from core.parsers import strip_code_block, RESOURCE_DECL_RE as _RESOURCE_DECL_RE
 from core.catalog import get_check_names
 from prompts.engineering import (
     SYSTEM_PROMPT as _SYSTEM_PROMPT, USER_TEMPLATE as _USER_TEMPLATE,
-    PATCH_HEADER, PREV_CODE_HEADER, PREV_ERRORS_HEADER, NO_RESOURCE_RETRY,
+    PATCH_HEADER, PREV_CODE_HEADER, PREV_ERRORS_HEADER, BOUNDARY_RETRY,
+    NO_RESOURCE_RETRY,
 )
 
 logger = logging.getLogger(__name__)
 
-_MAX_LLM_TRANSIENT_RETRY = 1
-_LLM_TRANSIENT_BACKOFF = 2
-_LLM_TRANSIENT_HINTS = (
-    "connection error",
-    "apiconnectionerror",
-    "timeout",
-    "timed out",
-    "proxyerror",
-    "rate limit",
-    "too many requests",
-    "temporarily unavailable",
-    "service unavailable",
-    "502",
-    "503",
-    "504",
-)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# CONSTANTS: Catalog + Regex patterns
-# ──────────────────────────────────────────────────────────────────────────────
-
 _CKV_NAME: dict[str, str] = get_check_names()
 
-# Xóa <plan>...</plan> tags từ LLM output.
-# Reasoning model (deepseek-v4-pro) đôi khi wrap chain-of-thought trong <plan> tags
-# trước khi trả HCL — những tags này không phải HCL hợp lệ, phải strip ra.
 _PLAN_TAG = re.compile(r"<plan>.*?</plan>", re.DOTALL | re.IGNORECASE)
 
-# Các keyword bắt đầu một block HCL hợp lệ.
-# Dùng để tìm điểm đầu tiên cần giữ trong output LLM (strip preamble text trước đó).
+# First valid HCL block in the model output.
 _HCL_BLOCK_START = re.compile(r'(?:terraform\s*\{|provider\s+"|resource\s+"|data\s+"|variable\s+"|output\s+"|module\s+")')
 _BACKEND_RE = re.compile(r'\bbackend\s+"[^"]+"\s*\{')
 _MODULE_RE = re.compile(r'\bmodule\s+"([^"]+)"\s*\{')
 
-_BOUNDARY_RETRY = """\
-Your HCL violates the Architecture plan boundary.
-
-Fix these defects:
-{defects}
-
-Rules:
-- Do not add managed resources that are not in the plan.
-- Do not remove managed resources that are in the plan.
-- Do not add data sources that are not in the plan.
-- Do not remove data sources that are in the plan.
-- Do not add terraform backend or module blocks.
-- If a planned resource needs an external object that is not in the plan, keep the
-  resource boundary intact and let validation route the missing dependency to Architecture.
-- Return the complete corrected Terraform HCL only.\
-"""
-
-# ──────────────────────────────────────────────────────────────────────────────
-# HELPERS: Clean LLM output (strip tags, preamble, markdown)
-# ──────────────────────────────────────────────────────────────────────────────
 
 def _strip_preamble(hcl: str) -> str:
-    """Bỏ phần văn bản LLM viết trước block HCL đầu tiên.
-
-    LLM thường viết intro như "Here's the Terraform configuration:" trước block code.
-    Những text này không phải HCL → terraform validate sẽ fail.
-
-    Ví dụ:
-      Input:  "Sure! Here's the config:\n\nresource \"aws_s3_bucket\" \"main\" { ... }"
-      Output: "resource \"aws_s3_bucket\" \"main\" { ... }"
-    """
+    """Drop text before the first HCL block."""
     m = _HCL_BLOCK_START.search(hcl)
     return hcl[m.start():] if m else hcl
 
 
 def _clean_hcl(raw: str) -> str:
-    """Clean LLM output thành HCL thuần.
-
-    3 bước theo thứ tự:
-      1. Xóa <plan>...</plan> tags (reasoning model chain-of-thought)
-      2. Xóa ```hcl...``` markdown fence
-      3. Xóa text giải thích trước block HCL đầu tiên
-    """
+    """Strip plan tags, fences, and preamble text."""
     cleaned = _PLAN_TAG.sub("", raw).strip()
     return _strip_preamble(strip_code_block(cleaned).strip())
 
 
 def _planned_resource_pairs(plan: dict) -> set[tuple[str, str]]:
+    """Return the planned resource pairs."""
     return {
         (r.get("type", ""), r.get("name", ""))
         for r in plan.get("resources", [])
@@ -111,6 +48,7 @@ def _planned_resource_pairs(plan: dict) -> set[tuple[str, str]]:
 
 
 def _planned_data_pairs(plan: dict) -> set[tuple[str, str]]:
+    """Return the planned data-source pairs."""
     return {
         (d.get("type", ""), d.get("name", ""))
         for d in plan.get("data_sources", [])
@@ -118,43 +56,11 @@ def _planned_data_pairs(plan: dict) -> set[tuple[str, str]]:
     }
 
 
-def _is_transient_llm_error(error: Exception) -> bool:
-    text = f"{type(error).__name__}: {error}".lower()
-    return any(hint in text for hint in _LLM_TRANSIENT_HINTS)
-
-
-def _call_engineering_llm(messages: list[dict]) -> str:
-    """Call the engineering LLM with one extra transient retry outside call_llm()."""
-    last_error: Exception | None = None
-    for attempt in range(_MAX_LLM_TRANSIENT_RETRY + 1):
-        try:
-            return call_llm(messages, agent="engineering")
-        except Exception as e:
-            last_error = e
-            if attempt >= _MAX_LLM_TRANSIENT_RETRY or not _is_transient_llm_error(e):
-                raise
-            time.sleep(_LLM_TRANSIENT_BACKOFF * (attempt + 1))
-    assert last_error is not None
-    raise last_error
-
-
-def _fail_engineering(fix_instruction: str, error_label: str, error_stage: str,
-                      *, raw_error: str | None = None) -> dict:
-    logger.warning("Engineering agent: FAIL INFRASTRUCTURE [%s/%s]", error_stage, error_label)
-    result = make_fail("INFRASTRUCTURE", None, fix_instruction)
-    fb = result["fix_feedback"]
-    fb["error_label"] = error_label
-    fb["error_stage"] = error_stage
-    if raw_error:
-        fb["raw_error"] = raw_error[:2000]
-    return result
-
-
 _DATA_DECL_RE = re.compile(r'data\s+"([^"]+)"\s+"([^"]+)"')
 
 
 def _boundary_defects(plan: dict, hcl: str) -> list[str]:
-    """Boundary: managed resources and data sources must match A1 plan."""
+    """Return plan-boundary defects in generated HCL."""
     planned = _planned_resource_pairs(plan)
     generated_list = _RESOURCE_DECL_RE.findall(hcl)
     generated = set(generated_list)
@@ -189,71 +95,115 @@ def _boundary_defects(plan: dict, hcl: str) -> list[str]:
     return defects
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# MAIN LOGIC: LLM prompt + code formatting + validation
-# ──────────────────────────────────────────────────────────────────────────────
-
-def engineering_node(state: AgentState) -> dict:
-    sec_lines = []
-    for label, info in state["security_profile"].items():
+def _security_context(security_profile: dict[str, dict]) -> str:
+    """Render selected checks as prompt text."""
+    lines: list[str] = []
+    for label, info in security_profile.items():
         checks = info.get("checks", [])
         if not checks:
             continue
-        sec_lines.append(f"  {label}:")
+        lines.append(f"  {label}:")
         for cid in checks:
             name = _CKV_NAME.get(cid, cid)
-            sec_lines.append(f"    - {cid}: {name}")
-    ctx_lines = "\n".join(sec_lines) or "  (no security checks selected)"
+            lines.append(f"    - {cid}: {name}")
+    return "\n".join(lines) or "  (no security checks selected)"
 
+
+def _engineering_fix_message(state: AgentState, fix_instruction: str) -> str:
+    """Build the repair prompt for engineering feedback."""
+    fix_msg = PATCH_HEADER + fix_instruction
+    if state["generated_code"]:
+        fix_msg += PREV_CODE_HEADER + state["generated_code"]
+    past = recent_fix_instructions(
+        state["eng_error_history"],
+        max_chars=200,
+        exclude=fix_instruction,
+    )
+    if past:
+        fix_msg += PREV_ERRORS_HEADER + "\n".join(f"- {p}" for p in past)
+    return fix_msg
+
+
+def _build_engineering_messages(state: AgentState) -> list[dict]:
+    """Build the base prompt for A3 and append repair context if needed."""
     user_content = _USER_TEMPLATE.format(
         PLAN=json.dumps(state["infrastructure_plan"]),
-        SECURITY_CONTEXT=ctx_lines,
+        SECURITY_CONTEXT=_security_context(state["security_profile"]),
     )
 
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user",   "content": user_content},
+        {"role": "user", "content": user_content},
     ]
 
     fix_feedback = state["fix_feedback"]
     fix_instruction = fix_feedback.get("fix_instruction", "")
     if fix_instruction and fix_feedback.get("root_cause") == "engineering":
-        fix_msg = PATCH_HEADER + fix_instruction
-        if state["generated_code"]:
-            fix_msg += PREV_CODE_HEADER + state["generated_code"]
-        past = recent_fix_instructions(state["eng_error_history"], max_chars=200,
-                                       exclude=fix_instruction)
-        if past:
-            fix_msg += PREV_ERRORS_HEADER + "\n".join(f"- {p}" for p in past)
-        messages.append({"role": "user", "content": fix_msg})
+        messages.append({
+            "role": "user",
+            "content": _engineering_fix_message(state, fix_instruction),
+        })
+    elif fix_instruction:
+        logger.debug(
+            "Engi: fix_instruction ignored (root_cause=%s)",
+            fix_feedback.get("root_cause"),
+        )
+    return messages
 
-    raw = ""
+
+def _make_engineering_failure(
+    fix_instruction: str,
+    error_label: str,
+    error_stage: str,
+    *,
+    raw_error: str | None = None,
+) -> dict:
+    """Build the standard failure payload for A3."""
+    logger.warning("Engineering agent: FAIL INFRASTRUCTURE [%s/%s]", error_stage, error_label)
+    result = build_fail_result("INFRASTRUCTURE", None, fix_instruction)
+    fb = result["fix_feedback"]
+    fb["error_label"] = error_label
+    fb["error_stage"] = error_stage
+    if raw_error:
+        fb["raw_error"] = raw_error[:2000]
+    return result
+
+
+def _run_engineering_attempt(messages: list[dict]) -> tuple[str, str]:
+    """Run one engineering attempt and return raw plus cleaned HCL."""
+    raw = call_llm(messages, agent="engineering")
+    return raw, _clean_hcl(raw)
+
+
+def engineering_node(state: AgentState) -> dict:
+    """Generate Terraform HCL from the plan and security context."""
+    messages = _build_engineering_messages(state)
+
+    fix_feedback = state["fix_feedback"]
+    fix_instruction = fix_feedback.get("fix_instruction", "")
+
     try:
-        raw = _call_engineering_llm(messages)
+        raw, body = _run_engineering_attempt(messages)
     except TimeoutError as e:
         logger.error("Engineering agent timeout: %s", e)
-        return _fail_engineering(f"Engineering agent LLM timeout: {e}", "LLM_TIMEOUT", "initial", raw_error=str(e))
+        return _make_engineering_failure(f"Engineering agent LLM timeout: {e}", "LLM_TIMEOUT", "initial", raw_error=str(e))
     except Exception as e:
         logger.error("Engineering agent error: %s", e)
-        label = "LLM_TRANSIENT" if _is_transient_llm_error(e) else "LLM_ERROR"
-        return _fail_engineering(f"Engineering agent error: {e}", label, "initial", raw_error=str(e))
+        return _make_engineering_failure(f"Engineering agent error: {e}", "LLM_ERROR", "initial", raw_error=str(e))
 
-    body = _clean_hcl(raw)
     if 'resource "' not in body:
-        logger.warning("Engineering agent: không có resource block — retry")
+        logger.warning("Engineering agent: no resource block — retry")
         retry_msgs = messages + [
             {"role": "assistant", "content": raw},
             {"role": "user", "content": NO_RESOURCE_RETRY},
         ]
         try:
-            raw = _call_engineering_llm(retry_msgs)
+            raw, body = _run_engineering_attempt(retry_msgs)
         except Exception as e:
-            label = "RETRY_LLM_TRANSIENT" if _is_transient_llm_error(e) else "RETRY_LLM_ERROR"
-            return _fail_engineering(f"Engineering agent retry error: {e}", label, "no_resource_retry", raw_error=str(e))
-        body = _clean_hcl(raw)
+            return _make_engineering_failure(f"Engineering agent retry error: {e}", "RETRY_LLM_ERROR", "no_resource_retry", raw_error=str(e))
         if 'resource "' not in body:
-            return _fail_engineering(
-                f"Engineering agent không sinh được resource block (sau retry). Raw: {raw[:300]}",
+            return _make_engineering_failure(
+                f"Engineering agent did not produce a resource block after retry. Raw: {raw[:300]}",
                 "NO_RESOURCE_BLOCK",
                 "no_resource_retry",
                 raw_error=raw[:3000],
@@ -264,20 +214,18 @@ def engineering_node(state: AgentState) -> dict:
         logger.warning("Engineering agent: boundary defect — retry: %s", defects[:5])
         retry_msgs = messages + [
             {"role": "assistant", "content": raw},
-            {"role": "user", "content": _BOUNDARY_RETRY.format(
+            {"role": "user", "content": BOUNDARY_RETRY.format(
                 defects="\n".join(f"- {d}" for d in defects)
             )},
         ]
         try:
-            raw = _call_engineering_llm(retry_msgs)
+            raw, body = _run_engineering_attempt(retry_msgs)
         except Exception as e:
-            label = "BOUNDARY_RETRY_LLM_TRANSIENT" if _is_transient_llm_error(e) else "BOUNDARY_RETRY_LLM_ERROR"
-            return _fail_engineering(f"Engineering agent boundary retry error: {e}", label, "boundary_retry", raw_error=str(e))
-        body = _clean_hcl(raw)
+            return _make_engineering_failure(f"Engineering agent boundary retry error: {e}", "BOUNDARY_RETRY_LLM_ERROR", "boundary_retry", raw_error=str(e))
         defects = _boundary_defects(state["infrastructure_plan"], body)
         if defects:
-            return _fail_engineering(
-                "Engineering agent kept violating plan boundary after retry: "
+            return _make_engineering_failure(
+                "Engineering agent kept violating the plan boundary after retry: "
                 + "; ".join(defects[:5]),
                 "BOUNDARY_VIOLATION",
                 "boundary_retry",
