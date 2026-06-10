@@ -1,17 +1,4 @@
-"""Semantic correctness eval — chấm HCL bằng OPA/Rego policy của IaC-Eval.
-
-Đây là thước đo CORRECTNESS *ngữ nghĩa* (không chỉ "có resource đúng type"):
-nó kiểm tra cấu hình resource có thật sự thỏa intent của prompt hay không, bằng
-chính gold Rego policy đi kèm dataset (cột "Rego intent").
-
-Quy trình (giống hệt IaC-Eval để số liệu so sánh được 1-1):
-    terraform init → terraform plan -out plan.out
-    terraform show -json plan.out → plan.json
-    opa eval -i plan.json -d policy.rego data
-    → duyệt mọi leaf trong value; nếu CÓ bất kỳ False → Failure, ngược lại Success.
-
-Tham chiếu: ref/sources/iac-eval/evaluation/eval.py::OPA_Rego_evaluation
-"""
+"""Semantic correctness evaluation using OPA/Rego policies."""
 import json
 import shutil
 import subprocess
@@ -25,7 +12,7 @@ _OPA_TIMEOUT = 60
 
 
 def _iter_leaves(value):
-    """Duyệt mọi leaf của dict/list lồng nhau (giống dict_generator của IaC-Eval)."""
+    """Yield every leaf in a nested dict/list structure."""
     if isinstance(value, dict):
         for v in value.values():
             yield from _iter_leaves(v)
@@ -41,12 +28,10 @@ def opa_available() -> bool:
 
 
 def _opa_eval(plan_json_path: Path, policy_path: Path) -> tuple[bool, str]:
-    """Chạy `opa eval` trên plan.json + policy.rego. Trả (passed, error)."""
+    """Run ``opa eval`` on ``plan.json`` and ``policy.rego``."""
     rego_text = policy_path.read_text(encoding="utf-8", errors="ignore")
     cmd = ["opa", "eval"]
-    # OPA >= 1.0 mặc định Rego v1 (bắt buộc `if`/`contains`). Gold policy của
-    # IaC-Eval viết bằng Rego v0 (không `if`, không `import rego.v1`) nên cần
-    # opt-in v0. Chỉ policy khai báo `import rego.v1` mới chạy ở chế độ v1.
+    # OPA 1.x defaults to Rego v1; older policies need --v0-compatible.
     if "import rego.v1" not in rego_text:
         cmd.append("--v0-compatible")
     cmd += ["-i", str(plan_json_path), "-d", str(policy_path), "data"]
@@ -64,8 +49,7 @@ def _opa_eval(plan_json_path: Path, policy_path: Path) -> tuple[bool, str]:
         return False, f"opa output unparseable: {(proc.stdout or proc.stderr)[:300]}"
 
     leaves = list(_iter_leaves(value))
-    # Không có leaf nào (policy không định nghĩa rule nào match) → coi là Failure
-    # để tránh false-positive, giống tinh thần "default allow = false".
+    # No leaves means no matching rule, so treat it as failure.
     if not leaves:
         return False, "opa produced no decision leaves"
     passed = False not in leaves
@@ -74,17 +58,7 @@ def _opa_eval(plan_json_path: Path, policy_path: Path) -> tuple[bool, str]:
 
 def semantic_correct(code: str, rego_policy: str,
                      plan_timeout: int = _PLAN_TIMEOUT) -> dict:
-    """Chấm 1 HCL config bằng gold Rego policy.
-
-    Returns:
-        {
-          "plan_ok":    bool,   # terraform plan thành công?
-          "rego_pass":  bool,   # OPA policy thỏa? (chỉ ý nghĩa khi plan_ok)
-          "correct":    bool,   # plan_ok AND rego_pass — định nghĩa correctness cuối
-          "stage":      "plan" | "opa" | "ok",
-          "error":      str,
-        }
-    """
+    """Score one HCL config against a Rego policy."""
     if not (code or "").strip():
         return {"plan_ok": False, "rego_pass": False, "correct": False,
                 "stage": "plan", "error": "empty code"}

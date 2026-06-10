@@ -1,25 +1,9 @@
-"""Định nghĩa & tính toán metric đánh giá — tách bạch, có thống kê.
-
-Khắc phục các điểm yếu phương pháp luận:
-  1. Phân tách 2 nhóm metric:
-       • Deterministic (tái lập được, không tốn tiền): plan_valid, semantic_correct, security_score
-       • Environment-dependent (phụ thuộc account AWS): deploy_success
-  2. pass@k CHUẨN (ước lượng không chệch của Codex/HumanEval) trên n run độc lập —
-     KHÔNG nhầm với "resolved within k iterations" (số vòng retry trong 1 lần chạy).
-  3. Mean ± std + CI95 khi có nhiều run.
-  4. Breakdown theo Difficulty.
-
-Thuật ngữ (đã đổi tên để không lạm dụng ký hiệu pass@k):
-  resolved@≤k  — tỉ lệ prompt mà pipeline tự giải quyết trong ≤ k vòng iteration
-                 (đặc trưng của hệ multi-agent có retry; metric NỘI BỘ 1 lần chạy).
-  pass@k       — ước lượng xác suất ≥1 trong k mẫu độc lập đạt, từ n run (CHUẨN).
-"""
+"""Evaluation metrics and summary helpers."""
 import math
 import random
 from statistics import mean, stdev
 
-# Giá trị tới hạn t (two-sided 95%) theo bậc tự do df=n-1. Cho n NHỎ (eval thường
-# 3-5 run), normal-approx z=1.96 cho CI HẸP GIẢ TẠO → dùng t. df>=30 ≈ 1.96.
+# Two-sided 95% t critical values for small-sample CI.
 _T95 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447,
         7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228, 15: 2.131, 20: 2.086, 25: 2.060}
 
@@ -38,21 +22,14 @@ def _t_crit(df: int) -> float:
 
 
 def pass_at_k(n: int, c: int, k: int) -> float:
-    """Ước lượng không chệch pass@k (Chen et al., 2021 / HumanEval).
-
-    n: tổng số mẫu độc lập; c: số mẫu đạt; k: ngân sách mẫu.
-    pass@k = 1 - C(n-c, k) / C(n, k)
-    """
+    """Unbiased pass@k estimator from Chen et al. (HumanEval)."""
     if n - c < k:
         return 1.0
     return 1.0 - math.comb(n - c, k) / math.comb(n, k)
 
 
 def aggregate(values: list[float]) -> dict:
-    """Mean ± sample-std + CI95 (t-distribution) cho tỉ lệ trên nhiều run.
-
-    Dùng t thay z=1.96 vì số run nhỏ (n=3-5); pstdev→stdev (sample, unbiased).
-    """
+    """Return mean, sample std, sample size, and 95% CI."""
     if not values:
         return {"mean": 0.0, "std": 0.0, "n": 0, "ci95": 0.0}
     n = len(values)
@@ -65,12 +42,7 @@ def aggregate(values: list[float]) -> dict:
 
 def bootstrap_ci(success: list[bool], resamples: int = 1000,
                  seed: int = 42) -> dict:
-    """Bootstrap CI95 cho tỉ lệ success ở mức TASK (giống MACOG: resample tasks).
-
-    Robust hơn t-CI khi phân phối lệch / n task vừa phải. success = list bool
-    per-task (đã gộp qua các run, vd success nếu pass ở BẤT KỲ run nào, hoặc
-    trung bình). Trả mean + CI95 [lo, hi].
-    """
+    """Bootstrap a 95% CI for task-level success rates."""
     if not success:
         return {"mean": 0.0, "ci95_lo": 0.0, "ci95_hi": 0.0, "n": 0}
     rng = random.Random(seed)
@@ -91,7 +63,7 @@ def rate(num: int, den: int) -> float:
     return round(num / den, 4) if den else 0.0
 
 
-# ── Metric definitions (dùng để in legend trong report) ───────────────────────
+# Metric legend text for reports.
 METRIC_DEFS = {
     "plan_valid":       "Deterministic: terraform validate + plan đều pass (config hợp lệ, deployable).",
     "semantic_correct": "Deterministic: gold Rego policy thỏa (cấu hình ĐÚNG intent), điều kiện plan_valid.",

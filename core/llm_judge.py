@@ -1,11 +1,4 @@
-"""LLM-judge metric — đánh giá adequacy của generated HCL.
-
-Theo MACOG (Khan et al. 2025): binary adequacy check per task.
-- Judge model KHÁC với generator để tránh self-evaluation bias.
-- Rubric-based: ẩn model identity, tránh position bias.
-- Output: c_i ∈ {0, 1} (1 = adequate/correct, 0 = inadequate/incorrect)
-- LLM-judge = 100 × mean(c_i) across M tasks.
-"""
+"""LLM-judge metric for generated HCL adequacy."""
 import json
 import logging
 import os
@@ -56,12 +49,10 @@ Output JSON only: {{"score": 0}} or {{"score": 1}}\
 
 
 def _make_judge_llm():
-    """Tạo judge LLM — dùng deepseek-chat (non-reasoning, nhanh, rẻ)
-    thay vì deepseek-v4-pro (generator) để tránh self-evaluation bias."""
+    """Create the judge model."""
     provider = os.environ.get("LLM_PROVIDER", "deepseek").lower()
     if provider == "deepseek":
         from langchain_openai import ChatOpenAI
-        # Dùng deepseek-chat chứ KHÔNG phải v4-pro (generator)
         judge_model = os.environ.get("JUDGE_MODEL", "deepseek-chat")
         return ChatOpenAI(
             model=judge_model,
@@ -87,10 +78,7 @@ def _get_judge():
 
 
 def llm_judge_single(prompt: str, hcl: str, timeout: int = 60) -> int:
-    """Judge 1 row. Trả về 0 hoặc 1.
-
-    Fallback = 0 nếu LLM lỗi (conservative — không inflate score).
-    """
+    """Judge one sample and return 0 or 1."""
     if not hcl or not hcl.strip():
         return 0
 
@@ -114,7 +102,6 @@ def llm_judge_single(prompt: str, hcl: str, timeout: int = 60) -> int:
             logger.warning("LLM judge error: %s", e)
             return 0
 
-    # Parse {"score": 0/1}
     try:
         import re
         m = re.search(r'"score"\s*:\s*([01])', raw)

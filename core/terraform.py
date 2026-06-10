@@ -1,8 +1,4 @@
-"""Wrapper cho Terraform CLI, Checkov, và Floci — dùng chung cho toàn pipeline.
-
-_TF_ENV đảm bảo mọi subprocess đều dùng plugin cache — tránh download
-provider hàng trăm lần khi chạy benchmark.
-"""
+"""Terraform, Checkov, and Floci helpers shared by the pipeline."""
 import base64
 import io
 import json
@@ -18,19 +14,14 @@ import time
 import zipfile
 from contextlib import contextmanager
 from pathlib import Path
-# Cache provider giữa các lần gọi terraform — đặt ngoài thư mục tmp
-# để tồn tại xuyên suốt toàn bộ benchmark
+# Provider cache shared across runs.
 _TF_CACHE_DIR = Path(__file__).parent.parent / ".tf_plugin_cache"
 _TF_CACHE_DIR.mkdir(exist_ok=True)
 
-# Serialize concurrent terraform init calls — trên Windows, nhiều process cùng truy cập
-# plugin cache dir gây file lock error ("The process cannot access the file because it is
-# being used by another process"). init chạy rất nhanh so với LLM call nên lock không
-# ảnh hưởng throughput đáng kể khi chạy --workers > 1.
+# Serialize concurrent terraform init calls on Windows.
 _TF_INIT_LOCK = threading.Lock()
 
-# Env dùng chung cho mọi subprocess terraform.
-# Dùng -plugin-dir (offline) cache mode: provider từ cache sẵn → link, nhanh, không network.
+# Shared subprocess environment with offline plugin cache.
 _TF_ENV = {**os.environ}
 for _proxy_key in (
     "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
@@ -47,22 +38,12 @@ _TF_ENV["NO_PROXY"] = ",".join(
     if p
 )
 
-# Công cụ bắt buộc cho PIPELINE (generate→validate→deploy). `opa` KHÔNG ở đây vì
-# pipeline không dùng OPA — nó chỉ cần cho semantic eval (core/rego_eval.py),
-# nơi tự kiểm tra opa riêng.
+# Required tools for the main pipeline. OPA is checked separately for semantic eval.
 _REQUIRED_TOOLS = ("checkov", "terraform")
 
 
 def _safe_rmtree(path: str | Path) -> None:
-    """Xóa cây thư mục an toàn với directory junction trên Windows.
-
-    Python 3.11 Windows: shutil.rmtree FOLLOW directory junction và xóa nội dung
-    của TARGET. .terraform/providers/ chứa junction trỏ vào plugin cache, nên
-    shutil.rmtree(run_dir) sẽ xóa luôn nội dung cache → "failed to remove existing
-    ...cache..." ở init sau. `cmd /c rmdir /s /q` xóa junction entry mà KHÔNG
-    follow target → cache an toàn. Đây là cách dọn dùng chung cho cả .terraform/
-    (terraform_workdir._clean) lẫn run_dir (evaluate.py).
-    """
+    """Remove a directory safely on Windows, including junctions."""
     p = Path(path)
     if not p.exists():
         return
@@ -75,23 +56,17 @@ def _safe_rmtree(path: str | Path) -> None:
         shutil.rmtree(p, ignore_errors=True)
 
 
-# Provider mà 1 đoạn HCL cần = prefix trước dấu "_" đầu tiên của resource/data type
-# (aws_s3_bucket → aws, random_password → random, archive_file → archive). Đúng cho
-# mọi provider dùng trong benchmark; bắt cả `data` vì data source cũng cần provider.
+# Provider name is the prefix before the first underscore in a resource/data type.
 _DECL_TYPE_RE = re.compile(r'(?:resource|data)\s+"([^"]+)"')
 
 
 def required_provider_names(code: str) -> set[str]:
-    """Tập tên provider mà HCL cần (suy từ prefix của resource/data type)."""
+    """Return provider names required by the HCL."""
     return {m.group(1).split("_", 1)[0] for m in _DECL_TYPE_RE.finditer(code)}
 
 
 def installed_provider_names(dot_tf: Path) -> set[str]:
-    """Tập provider đã cài trong .terraform/providers/ — đọc filesystem, KHÔNG network.
-
-    Layout: providers/<host>/<namespace>/<name>/<version>/<os_arch>; lấy <name>.
-    Dùng để phát hiện A3 thêm provider mới giữa row (provider set đổi → cần re-init).
-    """
+    """Return installed provider names from ``.terraform/providers``."""
     prov = dot_tf / "providers"
     if not prov.exists():
         return set()
@@ -99,27 +74,18 @@ def installed_provider_names(dot_tf: Path) -> set[str]:
 
 
 def tf_init_cmd() -> list[str]:
-    """terraform init command — dùng cache local exclusively.
-
-    Provider phải có sẵn trong cache tại D:\2-6\.tf_plugin_cache.
-    Không download từ internet → offline, an toàn, nhanh.
-    """
+    """Return the offline ``terraform init`` command."""
     return ["terraform", "init", "-plugin-dir", str(_TF_CACHE_DIR), "-no-color"]
 
 
 def check_required_tools() -> None:
-    """Kiểm tra các công cụ bắt buộc cho pipeline có trong PATH không.
-
-    Gọi một lần lúc startup để fail fast thay vì crash giữa benchmark.
-    """
+    """Fail fast when required tools are missing from ``PATH``."""
     missing = [t for t in _REQUIRED_TOOLS if not shutil.which(t)]
     if missing:
         raise RuntimeError(f"Công cụ chưa được cài: {', '.join(missing)}")
 
 
-# Các pattern HCL có thể reference file local — mỗi alternative có đúng 1 capture group.
-# Thứ tự quan trọng: pattern cụ thể (templatefile) trước pattern chung (file) để
-# finditer không bắt "file" bên trong "templatefile" trước khi group templatefile thử.
+# HCL patterns that may reference local files.
 _LOCAL_FILE_PATTERNS = re.compile(
     r'(?:'
     r'filename\s*=\s*"([^"]+)"'                   # filename = "..."  (archive_file, lambda)

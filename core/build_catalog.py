@@ -1,20 +1,4 @@
-"""Sinh core/catalog.json — catalog đầy đủ tất cả Checkov AWS checks.
-
-Gộp 2 nguồn:
-  1. Single-resource checks (CKV_AWS_*): trích từ resource_registry Python
-  2. Graph checks (CKV2_AWS_* + CKV_AWS_* companion-based): trích từ YAML/JSON files
-
-Format mỗi entry:
-  {"id", "name", "cat": [list], "connected_types": [list]}
-  - connected_types chỉ có ở graph checks (companion resource cần thêm vào HCL)
-  - single-resource checks không có connected_types
-
-Categories bị loại (_DROP_CATS) — ngoài mandate security (confidentiality/access):
-  LOGGING, BACKUP_AND_RECOVERY, KUBERNETES, SUPPLY_CHAIN, AI_AND_ML
-
-Chạy lại khi nâng Checkov:
-    python -m core.build_catalog
-"""
+"""Build ``core/catalog.json`` from Checkov AWS checks."""
 from __future__ import annotations
 
 import glob
@@ -41,10 +25,10 @@ _DROP_CATS: frozenset[str] = frozenset({
 })
 
 
-# ── Part 1: single-resource checks từ Python registry ─────────────────────────
+# Single-resource checks from the Python registry.
 
 def _build_single() -> dict[str, list[dict]]:
-    """Trích CKV_AWS_* từ resource_registry → {resource_type: [entry]}."""
+    """Return ``{resource_type: [entry]}`` for ``CKV_AWS_*`` checks."""
     out: dict[str, list[dict]] = {}
     for resource_type, checks in resource_registry.checks.items():
         seen: set[str] = set()
@@ -65,10 +49,10 @@ def _build_single() -> dict[str, list[dict]]:
     return out
 
 
-# ── Part 2: graph checks từ YAML/JSON files ────────────────────────────────────
+# Graph checks from YAML/JSON files.
 
 def _collect(defn, key: str, acc: set) -> None:
-    """Gom đệ quy mọi resource_types / connected_resource_types trong definition."""
+    """Collect nested ``key`` values from a graph-check definition."""
     if isinstance(defn, dict):
         v = defn.get(key)
         if isinstance(v, str):
@@ -83,13 +67,14 @@ def _collect(defn, key: str, acc: set) -> None:
 
 
 def _build_graph() -> dict[str, list[dict]]:
-    """Trích graph checks từ YAML/JSON → {primary_resource_type: [entry]}."""
+    """Return graph checks as ``{primary_resource_type: [entry]}``."""
     files = (glob.glob(os.path.join(_GRAPH_DIR, "*.yaml"))
              + glob.glob(os.path.join(_GRAPH_DIR, "*.json")))
     by_type: dict[str, list[dict]] = {}
     for f in files:
         try:
-            doc = yaml.safe_load(open(f))
+            with open(f, encoding="utf-8") as fp:
+                doc = yaml.safe_load(fp)
         except Exception:
             continue
         if not isinstance(doc, dict):
@@ -122,10 +107,10 @@ def _build_graph() -> dict[str, list[dict]]:
     return by_type
 
 
-# ── Merge + output ─────────────────────────────────────────────────────────────
+# Merge and write output.
 
 def build_catalog() -> dict[str, list[dict]]:
-    """Merge 2 nguồn → {resource_type: [entry]} sorted."""
+    """Merge the two sources into a sorted catalog."""
     catalog = _build_single()
     for rtype, entries in _build_graph().items():
         existing_ids = {e["id"] for e in catalog.get(rtype, [])}

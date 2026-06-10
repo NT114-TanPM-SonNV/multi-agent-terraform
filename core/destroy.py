@@ -1,8 +1,4 @@
-"""Destroy helpers: cleanup terraform resources via destroy + destroy override file.
-
-Shared by A4 (validation cleanup) + A5 (deployment cleanup + eval auto-destroy).
-Pattern: write destroy_override.tf → terraform apply → terraform destroy.
-"""
+"""Terraform destroy helpers shared by validation and deployment."""
 import logging
 import re
 import subprocess
@@ -14,17 +10,14 @@ from core.errors import matches_any, TRANSIENT_PATTERNS
 
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# CONSTANTS: Destroy timeouts + retry budgets + deletion protection patches
-# ──────────────────────────────────────────────────────────────────────────────
+# Destroy timeouts, retry budget, and deletion-protection patches.
 
 _DESTROY_TIMEOUT = 600   # ElastiCache/RDS cần 5-10 phút để xóa
 _MAX_DESTROY_TRANSIENT_RETRY = 1  # Retry destroy nếu transient (network/throttle)
 _DESTROY_RETRY_BACKOFF = 5  # giây chờ giữa các lần retry
 _DESTROY_OVERRIDE_NAME = "destroy_override.tf"
 
-# Patch HCL trước khi destroy trong eval mode — tắt các attribute chặn delete API.
-# Thứ tự quan trọng: final_snapshot_identifier phải xử lý sau skip_final_snapshot.
+# Patch HCL before destroy to disable delete blockers.
 _DESTROY_PATCHES = [
     (r'(deletion_protection_enabled\s*=\s*)true',    r'\g<1>false'),  # DynamoDB
     (r'(deletion_protection\s*=\s*)true',            r'\g<1>false'),  # RDS/ALB
@@ -35,30 +28,17 @@ _DESTROY_PATCHES = [
     (r'(multi_az_enabled\s*=\s*)true',               r'\g<1>false'),  # ElastiCache
 ]
 
-# ──────────────────────────────────────────────────────────────────────────────
-# HELPERS: Patch + Destroy
-# ──────────────────────────────────────────────────────────────────────────────
+# Patch and destroy helpers.
 
 def patch_for_destroy(code: str) -> str:
-    """Patch HCL để tắt deletion protection trước destroy.
-
-    Áp dụng regex patterns từ _DESTROY_PATCHES để đánh bật các flag chặn delete API.
-    Dùng trong eval mode hoặc manual cleanup.
-
-    Returns: patched HCL code (nếu không match → trả nguyên gốc)
-    """
+    """Patch HCL to disable deletion protection before destroy."""
     for pattern, replacement in _DESTROY_PATCHES:
         code = re.sub(pattern, replacement, code)
     return code
 
 
 def write_destroy_override(workdir: str | Path, code: str) -> Path | None:
-    """Write destroy_override.tf into the workdir if the code needs patching.
-
-    The main config is left untouched; Terraform loads the override file from the
-    same directory and applies the patched arguments during the destroy cleanup.
-    Returns the override path when created, otherwise None.
-    """
+    """Write ``destroy_override.tf`` when the code needs patching."""
     patched = patch_for_destroy(code)
     if patched == code:
         return None
@@ -68,7 +48,7 @@ def write_destroy_override(workdir: str | Path, code: str) -> Path | None:
 
 
 def cleanup_destroy_override(workdir: str | Path) -> None:
-    """Remove destroy_override.tf if it was created."""
+    """Remove ``destroy_override.tf`` if it exists."""
     override_path = Path(workdir) / _DESTROY_OVERRIDE_NAME
     try:
         override_path.unlink()
@@ -83,11 +63,7 @@ def destroy_with_override(
     max_retries: int = _MAX_DESTROY_TRANSIENT_RETRY,
     backoff: int = _DESTROY_RETRY_BACKOFF,
 ) -> tuple[bool, str | None]:
-    """Apply destroy overrides in-place, then run terraform destroy, then cleanup.
-
-    This keeps the apply workdir intact and avoids rewriting main.tf. The override
-    file is temporary and removed even when destroy fails.
-    """
+    """Apply destroy overrides, run destroy, then clean up the override file."""
     override_path = write_destroy_override(workdir, code)
     try:
         if override_path is not None:
@@ -111,22 +87,7 @@ def destroy_resources(
     max_retries: int = _MAX_DESTROY_TRANSIENT_RETRY,
     backoff: int = _DESTROY_RETRY_BACKOFF,
 ) -> tuple[bool, str | None]:
-    """Execute terraform destroy với transient retry logic.
-
-    Retry nếu transient error (network/throttle) — đối xứng terraform apply retry.
-    Best-effort: nếu destroy fail → dirty state → người phải cleanup thủ công.
-
-    Args:
-        tmpdir: terraform working directory
-        timeout: destroy timeout (seconds)
-        max_retries: số lần retry nếu transient
-        backoff: thời gian chờ trước mỗi retry (seconds)
-
-    Returns:
-        (success: bool, error_msg: str | None)
-          - success=True → destroy thành công
-          - success=False + error_msg=<str> → timeout hoặc non-transient error
-    """
+    """Run ``terraform destroy`` with a small transient retry loop."""
     for attempt in range(max_retries + 1):
         if attempt > 0:
             time.sleep(backoff * attempt)
@@ -150,13 +111,11 @@ def destroy_resources(
 
         destroy_err = (destroy.stderr or destroy.stdout or "").strip()
 
-        # Transient error → retry nếu còn lượt
         if attempt < max_retries and matches_any(destroy_err, TRANSIENT_PATTERNS):
             logger.warning("Destroy transient (attempt %d/%d) — retry: %s",
                           attempt + 1, max_retries + 1, destroy_err[:100])
             continue
 
-        # Non-transient error hoặc hết lượt → failed
         error_msg = destroy_err[:500]
         logger.warning("Destroy FAILED: %s", error_msg)
         return False, error_msg
