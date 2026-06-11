@@ -1,6 +1,6 @@
 # 🏗️ A Multi-Agent Framework for Secure and Deployable AWS Terraform Code Generation
 ## 📑 Mục lục
-
+1. [🏗 Architecture]()
 1. [⚙️ Yêu cầu & Setup](#️-yêu-cầu--setup)
 2. [🚀 Chạy nhanh](#-chạy-nhanh)
 3. [🧱 Kiến trúc pipeline](#-kiến-trúc-pipeline)
@@ -11,6 +11,12 @@
 8. [📁 Cấu trúc thư mục](#-cấu-trúc-thư-mục)
 
 ---
+
+## 🏗 Architecture
+<img width="1678" height="1000" alt="Screenshot 2026-06-11 220258" src="https://github.com/user-attachments/assets/92d413f3-a7c8-4352-b877-0d37c37eabf9" />
+
+
+
 
 ## ⚙️ Yêu cầu & Setup
 
