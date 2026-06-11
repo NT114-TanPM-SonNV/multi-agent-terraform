@@ -7,9 +7,9 @@ from core.parsers import parse_llm_json
 from core.retry_control import new_tracker
 from core.state import AgentState
 from prompts.architecture import (
-    ARCH_FIX_HEADER,
-    ARCH_PREV_ATTEMPTS,
-    DEFECT_FIX,
+    FIX_HEADER,
+    PREV_ATTEMPTS_HEADER,
+    DEFECT_RETRY,
     SYSTEM_PROMPT,
 )
 
@@ -99,14 +99,14 @@ def _plan_defects(plan: dict) -> list[str]:
 
 def _architecture_fix_message(state: AgentState, fix_instruction: str) -> str:
     """Build the repair prompt for architecture feedback."""
-    fix_msg = ARCH_FIX_HEADER.format(fix_instruction=fix_instruction)
+    fix_msg = FIX_HEADER.format(fix_instruction=fix_instruction)
     past = recent_fix_instructions(
         state["arch_error_history"],
         max_chars=400,
         exclude=fix_instruction,
     )
     if past:
-        fix_msg += ARCH_PREV_ATTEMPTS + "\n".join(f"- {p}" for p in past)
+        fix_msg += PREV_ATTEMPTS_HEADER + "\n".join(f"- {p}" for p in past)
     return fix_msg
 
 
@@ -191,7 +191,7 @@ def architecture_node(state: AgentState) -> dict:
             {"role": "assistant", "content": raw},
             {
                 "role": "user",
-                "content": DEFECT_FIX.format(
+                "content": DEFECT_RETRY.format(
                     defects="\n".join(f"- {d}" for d in defects)
                 ),
             },

@@ -8,7 +8,7 @@ from pathlib import Path
 from core.state import AgentState
 from core.llm import call_llm
 from core.parsers import parse_llm_json
-from prompts.security import SYSTEM_PROMPT, USER_TEMPLATE, RETRY_MSG
+from prompts.security import SYSTEM_PROMPT, USER_TEMPLATE, PARSE_RETRY
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ def security_node(state: AgentState) -> dict:
                 logger.warning("Security agent retry: %s", e)
                 messages = messages + [
                     {"role": "assistant", "content": raw or ""},
-                    {"role": "user", "content": RETRY_MSG},
+                    {"role": "user", "content": PARSE_RETRY},
                 ]
             else:
                 logger.warning("Security agent failed: %s — returning empty checks", e)

@@ -31,8 +31,8 @@ from core.errors import (
 )
 from prompts.validation import (
     SYSTEM_PROMPT as _SYSTEM_PROMPT,
-    TOP_PROMPT as _TOP, BOTTOM_PROMPT as _BOTTOM,
-    PLAN_CONTEXT, VALIDATE_FIX_TEMPLATE as _VALIDATE_FIX_TEMPLATE,
+    CLASSIFY_TEMPLATE,
+    VALIDATE_FIX_TEMPLATE as _VALIDATE_FIX_TEMPLATE,
     SECURITY_FIX_TEMPLATE as _SECURITY_FIX_TEMPLATE,
 )
 
@@ -483,11 +483,11 @@ def validation_node(state: AgentState) -> dict:
         # Plan succeeded — continue to security gate
         if plan_err:
             # Plan fail with error classification needed
-            ctx = _TOP + PLAN_CONTEXT.format(
+            ctx = CLASSIFY_TEMPLATE.format(
                 prompt=state.get("prompt", ""),
                 plan=json.dumps(state.get("infrastructure_plan") or {}, ensure_ascii=False),
                 plan_err=plan_err[:1500],
-            ) + _BOTTOM
+            )
             error_type, root_cause, fix_instruction = _llm_classify(
                 ctx, {"SYNTAX", "LOGIC", "MISSING_RESOURCE", "UNKNOWN"}, "UNKNOWN",
                 f"terraform plan failed: {plan_err[:300]}")

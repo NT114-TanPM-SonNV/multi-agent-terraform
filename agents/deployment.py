@@ -29,7 +29,7 @@ from core.errors import (
 )
 from core.destroy import destroy_with_override, _DESTROY_TIMEOUT
 from prompts.deployment import SYSTEM_PROMPT as _SYSTEM_PROMPT
-from prompts.deployment import TOP_PROMPT as _TOP, BOTTOM_PROMPT as _BOTTOM, CLASSIFY_CONTEXT
+from prompts.deployment import CLASSIFY_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
@@ -78,12 +78,12 @@ def _llm_classify(error_text: str, resource_labels: list[str],
                   failed_resource: str | None, partial: bool,
                   destroyed: bool, retry: int) -> tuple[str, str | None]:
     """LLM phân loại apply error. Fallback UNKNOWN nếu LLM fail."""
-    ctx = _TOP + CLASSIFY_CONTEXT.format(
+    ctx = CLASSIFY_TEMPLATE.format(
         labels=json.dumps(resource_labels),
         failed=failed_resource or "unknown",
         error=error_text[:2000],
         partial=partial, destroyed=destroyed, retry=retry,
-    ) + _BOTTOM
+    )
     try:
         parsed = parse_llm_json(
             call_llm([{"role": "system", "content": _SYSTEM_PROMPT},
