@@ -1,6 +1,4 @@
-"""Build ``core/catalog.json`` from Checkov AWS checks."""
 from __future__ import annotations
-
 import glob
 import json
 import os

@@ -59,11 +59,13 @@ from core.retry_control import (
     MAX_VAL_ARCH_RETRY, MAX_DEPLOY_ARCH_RETRY,
     MAX_VAL_ENG_RETRY,  MAX_DEPLOY_ENG_RETRY,
     MAX_VAL_SEC_RETRY,  MAX_DEPLOY_TOTAL_RETRY,
+    MAX_VAL_TOTAL_RETRY,
 )
 _MAX_ARCH_RETRY = MAX_VAL_ARCH_RETRY + MAX_DEPLOY_ARCH_RETRY  # 4 tổng 2 phase
 _MAX_ENG_RETRY  = MAX_VAL_ENG_RETRY  + MAX_DEPLOY_ENG_RETRY   # 5 tổng 2 phase
 _MAX_SEC_RETRY  = MAX_VAL_SEC_RETRY                            # 2
 _MAX_DEPLOY_TOTAL_RETRY = MAX_DEPLOY_TOTAL_RETRY               # 4 deploy-phase backstop
+_MAX_VAL_TOTAL_RETRY = MAX_VAL_TOTAL_RETRY                     # 5 val-phase backstop
 from evaluate import _select_graph
 
 
@@ -557,11 +559,11 @@ def _explain_routing(node: str, update: dict, merged: dict) -> None:
         else:
             _note(f"→ overall_passed=False, A4 cần route về agent phù hợp để sửa")
             _note(f"   error_type={yellow(et or '?')}  root_cause={yellow(rc or '?')}")
-            _note(f"   budget: total={total_r}/5  eng={eng_r}/{_MAX_ENG_RETRY}  sec={sec_r}/{_MAX_SEC_RETRY}  arch={arch_r}/{_MAX_ARCH_RETRY}")
+            _note(f"   budget: total={total_r}/{_MAX_VAL_TOTAL_RETRY}  eng={eng_r}/{_MAX_ENG_RETRY}  sec={sec_r}/{_MAX_SEC_RETRY}  arch={arch_r}/{_MAX_ARCH_RETRY}")
             print()
-            if total_r >= 5:
-                _note("→ total_val_attempts >= 5: backstop global — dừng để không loop vô hạn")
-                _arrow_next(node, "requires_human", f"backstop total_retry={total_r}/5")
+            if total_r >= _MAX_VAL_TOTAL_RETRY:
+                _note(f"→ total_val_attempts >= {_MAX_VAL_TOTAL_RETRY}: backstop global — dừng để không loop vô hạn")
+                _arrow_next(node, "requires_human", f"backstop total_retry={total_r}/{_MAX_VAL_TOTAL_RETRY}")
             elif et == "MISSING_RESOURCE":
                 if arch_r < _MAX_ARCH_RETRY:
                     _note("→ MISSING_RESOURCE: plan thiếu resource → A1 phải re-plan")
@@ -764,7 +766,34 @@ if __name__ == "__main__":
         action="store_true",
         help="Stop after A4 Validation",
     )
+    parser.add_argument(
+        "--logs",
+        type=str,
+        default=None,
+        help="Log file path (ghi tất cả WARNING/INFO)",
+    )
     args = parser.parse_args()
+
+    # Setup logging to file
+    if args.logs:
+        log_path = Path(args.logs)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setLevel(logging.DEBUG)
+        file_formatter = logging.Formatter(
+            "[%(levelname)s] %(name)s: %(message)s"
+        )
+        file_handler.setFormatter(file_formatter)
+        logging.getLogger().addHandler(file_handler)
+
+        # Suppress console output (chỉ ghi file)
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                root_logger.removeHandler(handler)
+
+        print(cyan(f"📝 Logs → {log_path.absolute()}"))
+        print()
 
     if args.csv:
         csv_path = args.csv

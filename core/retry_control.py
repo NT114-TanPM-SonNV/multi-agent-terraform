@@ -1,14 +1,18 @@
 """Central retry-budget tracking for the whole pipeline."""
 from core.state import AgentState, RetryTracker
 
-MAX_TOTAL_RETRY = 5
+# Cap per-route: mỗi đường retry (A4→A3 eng / A4→A1 arch / security) tối đa N lần.
 MAX_VAL_ENG_RETRY = 2
 MAX_VAL_ARCH_RETRY = 2
 MAX_VAL_SEC_RETRY = 1
 
 MAX_DEPLOY_ENG_RETRY = 2
 MAX_DEPLOY_ARCH_RETRY = 2
-MAX_DEPLOY_TOTAL_RETRY = 4
+
+# Backstop TỔNG mỗi pha = tổng các per-route (tự cập nhật nếu chỉnh cap per-route).
+# Chặn case xen kẽ route mà mỗi route chưa chạm cap riêng nhưng tổng vượt → loop.
+MAX_VAL_TOTAL_RETRY    = MAX_VAL_ENG_RETRY + MAX_VAL_ARCH_RETRY + MAX_VAL_SEC_RETRY  # 5
+MAX_DEPLOY_TOTAL_RETRY = MAX_DEPLOY_ENG_RETRY + MAX_DEPLOY_ARCH_RETRY                # 4
 
 def new_tracker() -> RetryTracker:
     """Return a fresh mutable retry tracker."""

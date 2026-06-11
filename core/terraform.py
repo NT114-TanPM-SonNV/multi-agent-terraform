@@ -353,8 +353,15 @@ def terraform_workdir(run_dir: str | Path | None, subdir: str, reuse: bool = Fal
             _clean(d)
         yield d
     else:
-        with tempfile.TemporaryDirectory(prefix=f"tf_{subdir}_") as tmp:
+        # Tự tạo + dọn bằng _safe_rmtree (junction-safe, không raise). KHÔNG dùng
+        # TemporaryDirectory vì cleanup của nó (shutil.rmtree) FOLLOW directory junction
+        # trong .terraform/providers/ → crash WinError 5/267 trên Windows khi gặp
+        # provider .exe bị lock (đặc biệt khi chạy nhiều worker song song).
+        tmp = tempfile.mkdtemp(prefix=f"tf_{subdir}_")
+        try:
             yield Path(tmp)
+        finally:
+            _safe_rmtree(tmp)
 
 
 def run_terraform(cmd: list[str], cwd: str | Path, timeout: int) -> subprocess.CompletedProcess:

@@ -22,7 +22,7 @@ from core.terraform import (
 )
 from core.retry_control import (
     increment_retry, check_retry_budget,
-    MAX_VAL_SEC_RETRY,
+    MAX_VAL_SEC_RETRY, MAX_VAL_TOTAL_RETRY,
 )
 from core.errors import (
     matches_any,
@@ -118,13 +118,36 @@ def _infra_result(state: AgentState, fix_instruction: str, checkov: dict,
     }
 
 
+def _unknown_result(state: AgentState, fix_instruction: str, checkov: dict,
+                    validate_passed: bool, plan_passed: bool, raw_error: str = "") -> dict:
+    """Return UNKNOWN error (unclassifiable plan failure). Requires human — no retry."""
+    state["total_val_attempts"] += 1
+    new_total = state["total_val_attempts"]
+    logger.warning("Agent 4: UNKNOWN — %s", fix_instruction[:80])
+    return {
+        "fix_feedback": {
+            "overall_passed": False, "error_type": "UNKNOWN", "root_cause": None,
+            "fix_instruction": fix_instruction, "raw_error": raw_error,
+            "checkov": checkov,
+            "validate_passed": validate_passed, "plan_passed": plan_passed,
+        },
+        "retries": state["retries"],
+        "total_val_attempts": state["total_val_attempts"],
+        "routing_log": state["routing_log"] + [{
+            "round": new_total, "error_type": "UNKNOWN", "root_cause": None,
+            "fix_instruction": fix_instruction, "predicted_route": "requires_human",
+        }],
+    }
+
+
 def _fail_result(state: AgentState, error_type: str, root_cause: str,
                  fix_instruction: str, checkov: dict, validate_passed: bool,
                  plan_passed: bool, raw_error: str = "") -> dict:
     """Return fixable error (SYNTAX, LOGIC, MISSING_RESOURCE). Route to A3/A1 for fix."""
     assert error_type in ("SYNTAX", "LOGIC", "MISSING_RESOURCE"), \
         f"_fail_result: unexpected error_type '{error_type}'"
-    new_total = state["total_val_attempts"] + 1
+    state["total_val_attempts"] += 1
+    new_total = state["total_val_attempts"]
     is_eng = error_type in ("SYNTAX", "LOGIC")
     is_arch = error_type == "MISSING_RESOURCE"
 
@@ -153,7 +176,8 @@ def _security_result(state: AgentState, applicable_failed: list[tuple[str, str, 
                      checkov: dict, not_applicable: list | None = None,
                      retry_allowed: bool = True) -> dict:
     """Return SECURITY error. Applicable failed checks found, route A3 to fix."""
-    new_total = state["total_val_attempts"] + 1
+    state["total_val_attempts"] += 1
+    new_total = state["total_val_attempts"]
     increment_retry(state, "sec", "SECURITY", str(sorted({cid for _a, cid, _n in applicable_failed})))
     fix_instruction = _SECURITY_FIX_TEMPLATE.format(
         items="\n".join(f"- {addr}: {name}" for addr, _id, name in applicable_failed)
@@ -468,6 +492,10 @@ def validation_node(state: AgentState) -> dict:
                 ctx, {"SYNTAX", "LOGIC", "MISSING_RESOURCE", "UNKNOWN"}, "UNKNOWN",
                 f"terraform plan failed: {plan_err[:300]}")
             logger.warning("Agent 4: FAIL %s (plan)", error_type)
+            # UNKNOWN = unclassifiable → requires_human ngay (không retry vô ích)
+            if error_type == "UNKNOWN":
+                return _unknown_result(state, fix_instruction or "terraform plan failed — unclassifiable",
+                                       _no_checkov, True, False, raw_error=plan_err[:2000])
             return _fail_result(state, error_type, root_cause, fix_instruction,
                               _no_checkov, True, False, raw_error=plan_err[:2000])
 
@@ -485,7 +513,7 @@ def route_after_validation(state: AgentState) -> str:
     fb = state.get("fix_feedback") or {}
     if fb.get("overall_passed"):
         return "deployment"
-    if state.get("total_val_attempts", 0) >= 5:
+    if state.get("total_val_attempts", 0) >= MAX_VAL_TOTAL_RETRY:
         return "requires_human"
     if fb.get("error_type") == "INFRASTRUCTURE":
         return "requires_human"

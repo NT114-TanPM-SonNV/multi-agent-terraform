@@ -1,14 +1,14 @@
-"""Runtime helpers for ``catalog.json``."""
+
 import json
 from pathlib import Path
 
-_CATALOG_FILE = Path(__file__).parent / "catalog.json"
+_CATALOG_FILE = "../catalog.json"
 
 
 def get_check_names() -> dict[str, str]:
     """Return a flat ``{check_id: check_name}`` map from ``catalog.json``."""
     try:
-        data = json.loads(_CATALOG_FILE.read_text(encoding="utf-8"))
+        data = json.loads(Path(_CATALOG_FILE).read_text(encoding="utf-8"))
     except Exception:
         return {}
     names: dict[str, str] = {}

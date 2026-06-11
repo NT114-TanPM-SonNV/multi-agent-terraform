@@ -44,7 +44,7 @@ logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(mes
 
 _BASE_SYSTEM = """\
 You are TerraformAI, an expert that writes Terraform configurations for AWS.
-Given a request, output a single complete, valid, deployable Terraform HCL configuration
+Given a request, output a single complete, valid, plannable Terraform HCL configuration
 using the AWS provider ~> 5.0. Include the terraform{} and provider "aws" blocks.
 
 Output ONLY raw HCL — no markdown fences, no explanation."""
@@ -155,6 +155,9 @@ def run_row(prompt: str, gt_types: list[str], plan_timeout: int,
     retries = 0
     validate_ok, plan_ok, err = _run_tf(code, plan_timeout)
 
+    # Snapshot lần-sinh-đầu (= pass@1 / B0) TRƯỚC khi repair ghi đè code.
+    a1 = (code, validate_ok, plan_ok, err, round(time.time() - t0, 1))
+
     while not plan_ok and retries < max_retry:
         if not code.strip():
             break
@@ -166,17 +169,19 @@ def run_row(prompt: str, gt_types: list[str], plan_timeout: int,
         validate_ok, plan_ok, err = _run_tf(code, plan_timeout)
 
     elapsed = round(time.time() - t0, 1)
-    gen_types = _declared_types(code)
+
+    def _view(c, vok, pok, e, el):
+        return {
+            "validate_ok": vok, "plan_ok": pok, "err": e, "code": c,
+            "n_res": len(_RESOURCE_DECL_RE.findall(c)),
+            "elapsed": el,
+            "resource_match": _resource_comparison(gt_types, _declared_types(c)) if gt_types else {},
+        }
 
     return {
-        "validate_ok":    validate_ok,
-        "plan_ok":        plan_ok,
-        "err":            err,
-        "code":           code,
-        "n_res":          len(_RESOURCE_DECL_RE.findall(code)),
-        "retries":        retries,
-        "elapsed":        elapsed,
-        "resource_match": _resource_comparison(gt_types, gen_types) if gt_types else {},
+        "final":    _view(code, validate_ok, plan_ok, err, elapsed),
+        "attempt1": _view(*a1),
+        "retries":  retries,
     }
 
 
@@ -194,6 +199,9 @@ def main():
                     help="Bật security best-practice guidance cho strong baseline B2")
     ap.add_argument("--workers",      type=int, default=1,
                     help="Số worker song song (mặc định 1)")
+    ap.add_argument("--b0-out",       default=None,
+                    help="Ghi THÊM file pass@1 (B0) lấy từ snapshot lần-sinh-đầu của cùng run "
+                         "→ chạy --retry 2 1 lần là có cả B0 lẫn B1, không tốn LLM thêm.")
     args = ap.parse_args()
 
     rows = list(csv.DictReader(open(args.csv, encoding="utf-8")))
@@ -220,62 +228,73 @@ def main():
         label = f"B1-direct+plan-retry≤{args.retry}"
     print(f"{label}  |  csv={Path(args.csv).name}  |  n={len(rows)}  |  workers={args.workers}")
 
+    # B0 derived: nếu run KHÔNG security → đúng B0; nếu có security → "security pass@1".
+    b0_label = ("B0-direct-pass@1 (from attempt1)" if not args.security_prompt
+                else "B2-security-pass@1 (from attempt1)")
     print_lock = threading.Lock()
 
-    def _run_one(item: tuple) -> dict:
+    def _record(orig_idx, diff, prompt, view, mode, sec_prompt, retry_budget, retries):
+        return {
+            "row": orig_idx, "difficulty": diff, "prompt": prompt,
+            "baseline": {"mode": mode, "security_prompt": sec_prompt,
+                         "retry_budget": retry_budget, "scope": "plan-only"},
+            "archi": {"ok": view["n_res"] > 0, "resource_count": view["n_res"]},
+            "secu":  {"ok": True, "skipped": True, "security_profile": {}},
+            "engi":  {"ok": bool(view["code"].strip()),
+                      "generated_code": view["code"], "resource_count": view["n_res"]},
+            "val":   {"ok": view["plan_ok"], "validate_ok": view["validate_ok"],
+                      "plan_ok": view["plan_ok"]},
+            "deploy": None,
+            "total_retry_count": retries,
+            "total_elapsed_s":   view["elapsed"],
+            "resource_match":    view["resource_match"],
+        }
+
+    def _run_one(item: tuple) -> tuple:
         orig_idx, row = item
         prompt   = row["Prompt"]
         diff     = (row.get("Difficulty") or "?").strip() or "?"
         gt_raw   = row.get("Resource") or ""
         gt_types = [t.strip() for t in gt_raw.split(",") if t.strip()]
 
-        r = run_row(prompt, gt_types, args.plan_timeout, args.retry, args.security_prompt)
+        try:
+            r = run_row(prompt, gt_types, args.plan_timeout, args.retry, args.security_prompt)
+        except Exception as e:  # 1 row lỗi KHÔNG được kéo chết cả batch (ex.map raise sớm)
+            ev = {"validate_ok": False, "plan_ok": False, "err": str(e)[:200],
+                  "code": "", "n_res": 0, "elapsed": 0.0, "resource_match": {}}
+            r = {"final": ev, "attempt1": ev, "retries": 0}
+        fin, a1 = r["final"], r["attempt1"]
 
         with print_lock:
-            print(f"row {orig_idx:3d} [{diff:<6}] plan_valid={r['plan_ok']} "
-                  f"({r['n_res']} res, retry={r['retries']}, {r['elapsed']}s)"
-                  + (f"  err={r['err'][:60]}" if not r['plan_ok'] else ""))
+            print(f"row {orig_idx:3d} [{diff:<6}] plan_valid={fin['plan_ok']} "
+                  f"({fin['n_res']} res, retry={r['retries']}, {fin['elapsed']}s)"
+                  + (f"  err={fin['err'][:60]}" if not fin['plan_ok'] else ""))
 
-        return {
-            "row":        orig_idx,
-            "difficulty": diff,
-            "prompt":     prompt,
-            "baseline": {
-                "mode": label,
-                "security_prompt": args.security_prompt,
-                "retry_budget": args.retry,
-                "scope": "plan-only",
-            },
-            "archi": {"ok": r["n_res"] > 0, "resource_count": r["n_res"]},
-            "secu":  {"ok": True, "skipped": True, "security_profile": {}},
-            "engi":  {
-                "ok":             bool(r["code"].strip()),
-                "generated_code": r["code"],
-                "resource_count": r["n_res"],
-            },
-            "val": {
-                "ok":          r["plan_ok"],
-                "validate_ok": r["validate_ok"],
-                "plan_ok":     r["plan_ok"],
-            },
-            "deploy":             None,
-            "total_retry_count":  r["retries"],
-            "total_elapsed_s":    r["elapsed"],
-            "resource_match":     r["resource_match"],
-        }
+        final_rec = _record(orig_idx, diff, prompt, fin, label,
+                            args.security_prompt, args.retry, r["retries"])
+        b0_rec = (_record(orig_idx, diff, prompt, a1, b0_label, args.security_prompt, 0, 0)
+                  if args.b0_out else None)
+        return final_rec, b0_rec
 
     if args.workers <= 1:
-        results = [_run_one(item) for item in rows]
+        pairs = [_run_one(item) for item in rows]
     else:
         with ThreadPoolExecutor(max_workers=args.workers) as ex:
-            results = list(ex.map(_run_one, rows))
-        results.sort(key=lambda r: r["row"])
+            pairs = list(ex.map(_run_one, rows))
+    pairs.sort(key=lambda p: p[0]["row"])
+    results = [p[0] for p in pairs]
 
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
-    n_ok = sum(1 for r in results if r["val"]["plan_ok"])
-    print(f"\n{label} plan_valid: {n_ok}/{len(results)}  →  saved {out}")
+    def _save(path_str, recs, lbl):
+        p = Path(path_str)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(recs, indent=2, ensure_ascii=False), encoding="utf-8")
+        n_ok = sum(1 for r in recs if r["val"]["plan_ok"])
+        print(f"{lbl} plan_valid: {n_ok}/{len(recs)}  →  saved {p}")
+
+    print()
+    _save(args.out, results, label)
+    if args.b0_out:
+        _save(args.b0_out, [p[1] for p in pairs], b0_label)
 
 
 if __name__ == "__main__":

@@ -136,6 +136,26 @@ def _handle_failure(state: AgentState, tmpdir: str,
         error_type, bool(created), partial_destroyed, destroy_failed,
     )
 
+    retry_config = {
+        "LOGIC": ("deploy_eng", "engineering"),
+        "MISSING_RESOURCE": ("deploy_arch", "architecture"),
+    }
+
+    root_cause = None
+    predicted_route = "requires_human"
+    fix_feedback = None
+
+    if error_type in retry_config:
+        retry_key, cause = retry_config[error_type]
+        increment_retry(state, retry_key, error_type, error_text[:200])
+        root_cause = cause
+        predicted_route = cause
+        fix_feedback = {
+            "overall_passed": False, "error_type": error_type, "root_cause": cause,
+            "fix_instruction": fix, "checkov": {"passed_count": 0, "failed": []},
+            "validate_passed": True, "plan_passed": True,
+        }
+
     result: dict = {
         "deployment_result": {
             "success": False,
@@ -154,24 +174,8 @@ def _handle_failure(state: AgentState, tmpdir: str,
         "total_deploy_attempts": state["total_deploy_attempts"],
     }
 
-    retry_config = {
-        "LOGIC": ("deploy_eng", "engineering"),
-        "MISSING_RESOURCE": ("deploy_arch", "architecture"),
-    }
-
-    root_cause = None
-    predicted_route = "requires_human"
-
-    if error_type in retry_config:
-        retry_key, cause = retry_config[error_type]
-        increment_retry(state, retry_key, error_type, error_text[:200])
-        root_cause = cause
-        predicted_route = cause
-        result["fix_feedback"] = {
-            "overall_passed": False, "error_type": error_type, "root_cause": cause,
-            "fix_instruction": fix, "checkov": {"passed_count": 0, "failed": []},
-            "validate_passed": True, "plan_passed": True,
-        }
+    if fix_feedback:
+        result["fix_feedback"] = fix_feedback
 
     result["routing_log"] = state["routing_log"] + [{
         "round": state["total_val_attempts"] + state["total_deploy_attempts"],

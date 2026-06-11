@@ -1,4 +1,3 @@
-"""Terraform destroy helpers shared by validation and deployment."""
 import logging
 import re
 import subprocess
