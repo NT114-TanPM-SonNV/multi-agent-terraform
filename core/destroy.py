@@ -1,20 +1,84 @@
 import logging
+import queue as _queue_mod
 import re
 import subprocess
+import threading
 import time
 from pathlib import Path
 
-from core.terraform import run_terraform
+from core.terraform import run_terraform, _safe_rmtree
 from core.errors import matches_any, TRANSIENT_PATTERNS
 
 logger = logging.getLogger(__name__)
 
-# Destroy timeouts, retry budget, and deletion-protection patches.
+# ── Constants ─────────────────────────────────────────────────────────────────
 
-_DESTROY_TIMEOUT = 600   # ElastiCache/RDS cần 5-10 phút để xóa
-_MAX_DESTROY_TRANSIENT_RETRY = 1  # Retry destroy nếu transient (network/throttle)
-_DESTROY_RETRY_BACKOFF = 5  # giây chờ giữa các lần retry
-_DESTROY_OVERRIDE_NAME = "destroy_override.tf"
+_DESTROY_TIMEOUT             = 600  # ElastiCache/RDS cần 5-10 phút để xóa
+_MAX_DESTROY_TRANSIENT_RETRY = 1
+_DESTROY_RETRY_BACKOFF       = 5
+_DESTROY_OVERRIDE_NAME       = "destroy_override.tf"
+
+# ── Async destroy queue ───────────────────────────────────────────────────────
+
+_Q:      _queue_mod.Queue | None = None
+_WORKER: threading.Thread | None = None
+
+
+def _worker_fn() -> None:
+    while True:
+        item = _Q.get()
+        if item is None:          # sentinel
+            _Q.task_done()
+            break
+        workdir, code = item
+        try:
+            destroy_with_override(workdir, code)
+        except Exception as e:
+            logger.warning("Destroy worker error: %s", e)
+        finally:
+            try:
+                _safe_rmtree(str(workdir))
+            except Exception:
+                pass
+            _Q.task_done()
+
+
+def start_destroy_worker() -> None:
+    """Khởi động worker thread xử lý destroy bất đồng bộ (non-daemon)."""
+    global _Q, _WORKER
+    _Q = _queue_mod.Queue()
+    _WORKER = threading.Thread(target=_worker_fn, daemon=False, name="destroy-worker")
+    _WORKER.start()
+    logger.info("Destroy worker started")
+
+
+def shutdown_destroy_worker(timeout: int = _DESTROY_TIMEOUT + 120) -> None:
+    """Gửi sentinel, chờ queue drain hết rồi mới return."""
+    if _Q is None:
+        return
+    _Q.put(None)
+    if _WORKER:
+        _WORKER.join(timeout=timeout)
+        if _WORKER.is_alive():
+            logger.warning("Destroy worker still alive after %ds — giving up", timeout)
+    logger.info("Destroy worker stopped")
+
+
+def enqueue_destroy(workdir: str | Path, code: str) -> tuple[bool, str | None]:
+    """Push vào queue nếu worker đang chạy, ngược lại chạy inline.
+
+    Trong cả 2 trường hợp, *workdir* được cleanup sau khi destroy xong.
+    Caller phải đảm bảo workdir là staging dir riêng (không dùng chung).
+    """
+    if _Q is None:
+        # Inline (trace.py hoặc chạy đơn lẻ): destroy + cleanup ngay
+        ok, err = destroy_with_override(str(workdir), code)
+        _safe_rmtree(str(workdir))
+        return ok, err
+    _Q.put((str(workdir), code))
+    return True, None
+
+# ── Destroy helpers ───────────────────────────────────────────────────────────
 
 # Patch HCL before destroy to disable delete blockers.
 _DESTROY_PATCHES = [

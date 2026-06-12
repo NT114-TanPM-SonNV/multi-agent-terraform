@@ -237,14 +237,11 @@ def main():
         return {
             "row": orig_idx, "difficulty": diff, "prompt": prompt,
             "baseline": {"mode": mode, "security_prompt": sec_prompt,
-                         "retry_budget": retry_budget, "scope": "plan-only"},
-            "archi": {"ok": view["n_res"] > 0, "resource_count": view["n_res"]},
-            "secu":  {"ok": True, "skipped": True, "security_profile": {}},
-            "engi":  {"ok": bool(view["code"].strip()),
-                      "generated_code": view["code"], "resource_count": view["n_res"]},
-            "val":   {"ok": view["plan_ok"], "validate_ok": view["validate_ok"],
-                      "plan_ok": view["plan_ok"]},
-            "deploy": None,
+                         "retry_budget": retry_budget},
+            "engineering": {"ok": bool(view["code"].strip()), "generated_code": view["code"]},
+            "validation":  {"ok": view["plan_ok"], "plan_ok": view["plan_ok"],
+                            "validate_ok": view["validate_ok"]},
+            "deployment":  None,
             "total_retry_count": retries,
             "total_elapsed_s":   view["elapsed"],
             "resource_match":    view["resource_match"],
@@ -288,7 +285,7 @@ def main():
         p = Path(path_str)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(recs, indent=2, ensure_ascii=False), encoding="utf-8")
-        n_ok = sum(1 for r in recs if r["val"]["plan_ok"])
+        n_ok = sum(1 for r in recs if r["validation"]["plan_ok"])
         print(f"{lbl} plan_valid: {n_ok}/{len(recs)}  →  saved {p}")
 
     print()

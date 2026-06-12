@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -27,7 +28,7 @@ from core.errors import (
     PROVIDER_SETUP_PATTERNS,
     TRANSIENT_PATTERNS,
 )
-from core.destroy import destroy_with_override, _DESTROY_TIMEOUT
+from core.destroy import destroy_with_override, enqueue_destroy, _DESTROY_TIMEOUT
 from prompts.deployment import SYSTEM_PROMPT as _SYSTEM_PROMPT
 from prompts.deployment import CLASSIFY_TEMPLATE
 
@@ -259,13 +260,12 @@ def deployment_node(state: AgentState) -> dict:
         created = _state_resources(d)
         logger.info("Agent 5: APPLY OK — %d resources", len(created))
 
-        logger.info("Agent 5: destroying resources")
-        destroy_ok, destroy_err = destroy_with_override(d, code, timeout=_DESTROY_TIMEOUT)
-        if not destroy_ok:
-            logger.warning("Agent 5: destroy FAILED — %s",
-                           destroy_err or f"timeout >{_DESTROY_TIMEOUT}s")
-        else:
-            logger.info("Agent 5: destroy OK")
+        # Move tf workdir ra staging dir riêng trước khi enqueue destroy.
+        # Tránh race condition với _safe_rmtree(run_dir) ở row runner.
+        staging = Path(run_dir).parent / f"_destroy_{Path(run_dir).name}"
+        shutil.move(str(d), str(staging))
+        logger.info("Agent 5: enqueue destroy → %s", staging.name)
+        destroy_ok, destroy_err = enqueue_destroy(staging, code)
 
         return {
             "deployment_result": {
@@ -274,12 +274,12 @@ def deployment_node(state: AgentState) -> dict:
                 "error_label": None,
                 "resources_created": created,
                 "partial_apply_destroyed": False,
-                "destroy_failed": False,
+                "destroy_failed": not destroy_ok,
                 "cleanup_error_label": None,
                 "destroy_error": destroy_err,
                 "fix_instruction": None,
                 "apply_raw_error": None,
-                "destroyed": destroy_ok,
+                "destroyed": True,
             }
         }
 
