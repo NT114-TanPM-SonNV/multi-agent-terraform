@@ -1,4 +1,6 @@
 # 🏗️ A Multi-Agent Framework for Secure and Deployable AWS Terraform Code Generation
+<!---
+
 ## 📑 Mục lục
 1. [🏗 Architecture]()
 1. [⚙️ Yêu cầu & Setup](#️-yêu-cầu--setup)
@@ -10,16 +12,20 @@
 7. [⚖️ So sánh Baseline vs Pipeline](#️-so-sánh-baseline-vs-pipeline)
 8. [📁 Cấu trúc thư mục](#-cấu-trúc-thư-mục)
 
----
+--->
 
-## 🏗 Architecture
+🏗 Architecture
 <img width="1678" height="1000" alt="Screenshot 2026-06-11 220258" src="https://github.com/user-attachments/assets/92d413f3-a7c8-4352-b877-0d37c37eabf9" />
-
+<p align="center">
+  <em>Hình 1: Sơ đồ kiến trúc tổng thể của của hệ thống.</em>
+</p>
 
 
 <img width="2125" height="907" alt="image" src="https://github.com/user-attachments/assets/07ad03c5-55c4-4706-99da-ce5c64228c2d" />
 
-
+<p align="center">
+  <em>Hình 2: Sơ đồ quy trình triển khai.</em>
+</p>
 
 ## ⚙️ Yêu cầu & Setup
 
