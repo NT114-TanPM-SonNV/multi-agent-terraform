@@ -36,6 +36,7 @@ env/
 
 
 .tf_plugin_cache/
+**/.terraform/
 
 # Floci runtime data (Docker volumes — không commit)
 floci/data-*/

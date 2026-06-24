@@ -1,0 +1,96 @@
+Resource,Prompt,Rego intent,Difficulty,Reference output,Intent
+"aws_s3_bucket, aws_s3_bucket_versioning, aws_s3_bucket_server_side_encryption_configuration, aws_s3_bucket_public_access_block","Create a private AWS S3 bucket for a trace demo. The bucket must block all public access, enable versioning, and enable server-side encryption using AES256.","package terraform.validation
+
+default valid = false
+
+s3_bucket[resource] {
+    resource := input.resource_changes[_]
+    resource.mode == ""managed""
+    resource.type == ""aws_s3_bucket""
+}
+
+versioning[resource] {
+    resource := input.resource_changes[_]
+    resource.mode == ""managed""
+    resource.type == ""aws_s3_bucket_versioning""
+    resource.change.after.versioning_configuration[0].status == ""Enabled""
+}
+
+encryption[resource] {
+    resource := input.resource_changes[_]
+    resource.mode == ""managed""
+    resource.type == ""aws_s3_bucket_server_side_encryption_configuration""
+    resource.change.after.rule[0].apply_server_side_encryption_by_default[0].sse_algorithm == ""AES256""
+}
+
+public_access_block[resource] {
+    resource := input.resource_changes[_]
+    resource.mode == ""managed""
+    resource.type == ""aws_s3_bucket_public_access_block""
+    resource.change.after.block_public_acls == true
+    resource.change.after.block_public_policy == true
+    resource.change.after.ignore_public_acls == true
+    resource.change.after.restrict_public_buckets == true
+}
+
+valid {
+    count(s3_bucket) > 0
+    count(versioning) > 0
+    count(encryption) > 0
+    count(public_access_block) > 0
+}","2","terraform {
+  required_providers {
+    aws = {
+      source  = ""hashicorp/aws""
+      version = ""~> 5.0""
+    }
+    random = {
+      source  = ""hashicorp/random""
+      version = ""~> 3.6""
+    }
+  }
+}
+
+provider ""aws"" {
+  region = ""us-east-1""
+}
+
+resource ""random_id"" ""suffix"" {
+  byte_length = 4
+}
+
+resource ""aws_s3_bucket"" ""trace_demo"" {
+  bucket        = ""trace-demo-${random_id.suffix.hex}""
+  force_destroy = true
+
+  tags = {
+    Purpose = ""trace-demo""
+  }
+}
+
+resource ""aws_s3_bucket_public_access_block"" ""trace_demo"" {
+  bucket = aws_s3_bucket.trace_demo.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource ""aws_s3_bucket_versioning"" ""trace_demo"" {
+  bucket = aws_s3_bucket.trace_demo.id
+
+  versioning_configuration {
+    status = ""Enabled""
+  }
+}
+
+resource ""aws_s3_bucket_server_side_encryption_configuration"" ""trace_demo"" {
+  bucket = aws_s3_bucket.trace_demo.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = ""AES256""
+    }
+  }
+}","Creates a private S3 bucket with versioning, AES256 server-side encryption, and full public access blocking for a simple trace demo."

@@ -198,6 +198,20 @@ Chạy benchmark không deploy:
 python eval.py --dataset dataset/data-dev.csv --no-deploy --out results/no-deploy.json --workers 5
 ```
 
+Chạy một case demo để trace luồng agent:
+
+```powershell
+python trace.py --csv dataset/demo-trace.csv --case 0 --no-deploy
+```
+
+Lệnh trên in walkthrough chi tiết từng bước A1 -> A4: agent đọc gì từ state, ghi gì vào state, route sang node nào và vì sao. Nếu muốn tạo JSON kết quả ngắn để xem `routing_log`, chạy:
+
+```powershell
+python eval.py --dataset dataset/demo-trace.csv --no-deploy --out results/demo-trace.json --workers 1 --overwrite
+```
+
+File `results/demo-trace.json` sẽ có trạng thái từng agent, `routing_log`, số lần retry, thời gian chạy và mã Terraform sinh ra. Nếu muốn demo cả bước deploy thật, bỏ cờ `--no-deploy` ở hai lệnh trên.
+
 Chạy baseline:
 
 ```powershell
